@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>EUTRANS</title>
+  <title>EUTRANS – planowanie podróży</title>
 
   <!-- PWA -->
   <link rel="manifest" href="./manifest.webmanifest">
@@ -19,184 +19,211 @@
       --muted:#93a4c7;
       --text:#e8eefc;
       --accent:#3b82f6;
-      --accent2:#22c55e;
       --border:rgba(255,255,255,.08);
       --warn:#f59e0b;
       --danger:#ef4444;
     }
+
     *{box-sizing:border-box}
+
     body{
-      margin:0; padding:18px;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      margin:0;
+      padding:20px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
       background: radial-gradient(1200px 600px at 20% 0%, #16203a 0%, var(--bg) 55%) fixed;
       color:var(--text);
     }
+
     .container{max-width:1200px; margin:0 auto;}
-    header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap;}
-    .brand{display:flex; align-items:center; gap:10px;}
-    .logo{
-      width:40px; height:40px; border-radius:12px;
-      background: linear-gradient(135deg, var(--accent), #7c3aed);
-      display:grid; place-items:center; font-weight:900;
-      box-shadow: 0 12px 30px rgba(59,130,246,.25);
+
+    header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:16px;
+      flex-wrap:wrap;
     }
-    h1{font-size:20px; margin:0;}
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+
+    .logo{
+      width:44px;
+      height:44px;
+      border-radius:14px;
+      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      display:grid;
+      place-items:center;
+      font-weight:900;
+      font-size:16px;
+    }
+
+    h1{margin:0; font-size:22px;}
     .hint{color:var(--muted); font-size:13px;}
-    .grid{display:grid; gap:14px; grid-template-columns: 1.1fr .9fr;}
-    @media (max-width: 980px){ .grid{grid-template-columns: 1fr;} }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap:16px;
+    }
+
+    @media(max-width:980px){
+      .grid{grid-template-columns:1fr;}
+    }
 
     .card{
-      background: rgba(18,26,42,.85);
+      background: rgba(18,26,42,.9);
       border:1px solid var(--border);
-      border-radius:16px;
-      padding:14px;
+      border-radius:18px;
+      padding:16px;
       box-shadow: 0 12px 35px rgba(0,0,0,.25);
-      backdrop-filter: blur(10px);
     }
+
     .mapwrap{padding:0; overflow:hidden;}
     #map{height:540px; width:100%;}
     @media(max-width:980px){ #map{height:420px;} }
 
-    label{display:block; font-size:12px; color:var(--muted); margin:0 0 6px;}
-    input, select, button, textarea{
+    label{
+      display:block;
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:6px;
+    }
+
+    input, select, button{
       width:100%;
-      padding:11px 12px;
-      border-radius:12px;
+      padding:15px 16px;
+      font-size:16px;
+      border-radius:14px;
       border:1px solid var(--border);
-      background: rgba(255,255,255,.04);
+      background: rgba(255,255,255,.05);
       color:var(--text);
       outline:none;
-      font-size:14px;
-    }
-    textarea{min-height:64px; resize:vertical;}
-    input:focus, select:focus, textarea:focus{
-      border-color: rgba(59,130,246,.55);
-      box-shadow: 0 0 0 3px rgba(59,130,246,.14);
     }
 
-    .row{display:grid; grid-template-columns: 1fr 1fr 170px 140px; gap:10px;}
-    @media (max-width: 980px){ .row{grid-template-columns:1fr;} }
+    input:focus, select:focus{
+      border-color: rgba(59,130,246,.6);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+    }
 
-    .row2{display:grid; grid-template-columns: 1fr 1fr; gap:10px;}
-    @media (max-width: 980px){ .row2{grid-template-columns:1fr;} }
+    .row{
+      display:grid;
+      grid-template-columns: 1.5fr 1.5fr 200px 150px;
+      gap:12px;
+    }
+
+    .row2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      margin-top:12px;
+    }
+
+    @media(max-width:980px){
+      .row, .row2{grid-template-columns:1fr;}
+    }
 
     .btn{
       background: var(--accent);
       color:white;
-      font-weight:800;
-      cursor:pointer;
-    }
-    .btn:hover{filter:brightness(1.06)}
-    .btn-green{
-      background: rgba(34,197,94,.18);
-      border-color: rgba(34,197,94,.25);
-      color:#d7ffe6;
       font-weight:900;
-      text-decoration:none;
-      display:inline-flex; align-items:center; justify-content:center;
-      gap:8px;
-    }
-    .btn-green:hover{background: rgba(34,197,94,.26);}
-    .btn-ghost{
-      background: rgba(255,255,255,.04);
-      color: var(--text);
       cursor:pointer;
     }
-    .btn-ghost:hover{background: rgba(255,255,255,.06);}
+
+    .btn:hover{filter:brightness(1.07)}
 
     .pill{
-      font-size:12px; padding:4px 8px; border-radius:999px;
-      border:1px solid var(--border); color:var(--muted);
-      background: rgba(255,255,255,.03); white-space:nowrap;
+      display:inline-block;
+      padding:5px 10px;
+      font-size:12px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      color:var(--muted);
+      background: rgba(255,255,255,.03);
     }
 
     .error{
-      color:#ffb4b4; background: rgba(239,68,68,.12);
+      margin-top:12px;
+      padding:12px;
+      border-radius:12px;
+      background: rgba(239,68,68,.12);
       border:1px solid rgba(239,68,68,.25);
-      padding:10px 12px; border-radius:12px; display:none; margin-top:10px;
+      color:#ffb4b4;
+      display:none;
     }
+
     .warn{
-      color:#ffe0b2; background: rgba(245,158,11,.10);
-      border:1px solid rgba(245,158,11,.22);
-      padding:10px 12px; border-radius:12px; display:none; margin-top:10px;
+      margin-top:12px;
+      padding:12px;
+      border-radius:12px;
+      background: rgba(245,158,11,.12);
+      border:1px solid rgba(245,158,11,.25);
+      color:#ffe0b2;
+      display:none;
     }
 
-    .sectionTitle{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:12px 0;}
-    .list{display:grid; gap:10px;}
-
-    .offer{
-      border:1px solid var(--border);
-      border-radius:14px;
-      padding:10px 12px;
-      background: rgba(255,255,255,.03);
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    .sectionTitle{
+      margin:16px 0 8px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
     }
-    .offer small{color:var(--muted)}
 
     .routeCard{
       border:1px solid var(--border);
       border-radius:14px;
-      padding:12px;
+      padding:14px;
       background: rgba(255,255,255,.03);
     }
-    .routeLegs{margin-top:8px; display:grid; gap:6px;}
-    .leg{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      border:1px dashed rgba(255,255,255,.10);
-      background: rgba(0,0,0,.12);
-      padding:8px 10px;
-      border-radius:12px;
-    }
-    .legLeft{display:flex; flex-direction:column; gap:2px;}
-    .legTitle{font-weight:900}
-    .legMeta{color:var(--muted); font-size:12px}
 
     .kbd{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New";
-      background: rgba(255,255,255,.06);
+      font-family: ui-monospace, Consolas, monospace;
+      background: rgba(255,255,255,.08);
       border:1px solid var(--border);
       border-radius:8px;
       padding:2px 6px;
       font-size:12px;
-      color: #dbe7ff;
     }
-
-    .footerHint{color:var(--muted); font-size:12px; margin-top:10px; line-height:1.45;}
   </style>
 </head>
 
 <body>
 <div class="container">
+
   <header>
     <div class="brand">
       <div class="logo">EU</div>
       <div>
         <h1>EUTRANS</h1>
-        <div class="hint">Europa lądowa • trasy • przesiadki • ceny • przekierowania</div>
+        <div class="hint">Planowanie podróży po Europie – pociągi, autobusy, loty</div>
       </div>
     </div>
-
-    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <span class="pill" id="statsPill">Miasta: …</span>
-      <button class="btn-ghost" id="installBtn" style="display:none; width:auto; padding:10px 12px;">Zainstaluj aplikację</button>
-    </div>
+    <span class="pill" id="statsPill">Miasta: …</span>
   </header>
 
   <div class="grid">
+
+    <!-- MAPA -->
     <div class="card mapwrap">
       <div id="map"></div>
     </div>
 
+    <!-- PANEL -->
     <div class="card">
-      <!-- GŁÓWNE POLA -->
+
       <div class="row">
         <div>
           <label>Skąd</label>
-          <input id="from" list="cities" placeholder="np. Warszawa, Berlin, Praga…" />
+          <input id="from" list="cities" placeholder="Wpisz miasto startowe…" />
         </div>
         <div>
           <label>Dokąd</label>
-          <input id="to" list="cities" placeholder="np. Wiedeń, Budapeszt, Paryż…" />
+          <input id="to" list="cities" placeholder="Wpisz miasto docelowe…" />
         </div>
         <div>
           <label>Data</label>
@@ -210,24 +237,21 @@
 
       <datalist id="cities"></datalist>
 
-      <!-- PRZESIADKI -->
-      <div class="row2" style="margin-top:10px;">
+      <div class="row2">
         <div>
           <label>Min. czas na przesiadkę</label>
           <select id="minTransfer">
-            <option value="5">5 min</option>
             <option value="10">10 min</option>
             <option value="15" selected>15 min</option>
             <option value="20">20 min</option>
             <option value="30">30 min</option>
             <option value="45">45 min</option>
-            <option value="60">60 min</option>
           </select>
         </div>
         <div>
           <label>Maks. liczba przesiadek</label>
           <select id="maxTransfers">
-            <option value="0">0 (bezpośrednio)</option>
+            <option value="0">0</option>
             <option value="1" selected>1</option>
             <option value="2">2</option>
             <option value="3">3</option>
@@ -235,25 +259,11 @@
         </div>
       </div>
 
-      <!-- VIA + OPTYMALIZACJA -->
-      <div class="row2" style="margin-top:10px;">
+      <div class="row2">
         <div>
           <label>Stacje poboczne (opcjonalnie)</label>
-          <input id="vias" placeholder="np. Poznań, Wrocław, Praga (oddziel przecinkami)" />
+          <input id="vias" placeholder="np. Poznań, Wrocław, Praga" />
         </div>
-        <div>
-          <label>Tryb optymalizacji</label>
-          <select id="optMode">
-            <option value="balanced" selected>Najkorzystniej (balans)</option>
-            <option value="fastest">Najszybciej</option>
-            <option value="cheapest">Najtaniej</option>
-            <option value="fewest">Najmniej przesiadek</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- NOWE: WALUTA / MAPA / KOLEJ / ŹRÓDŁO -->
-      <div class="row2" style="margin-top:10px;">
         <div>
           <label>Waluta</label>
           <select id="currency">
@@ -261,66 +271,26 @@
             <option value="EUR">EUR</option>
           </select>
         </div>
-        <div>
-          <label>Linia na mapie</label>
-          <select id="lineStyle">
-            <option value="route" selected>Po trasie (polilinia)</option>
-            <option value="straight">Prosta</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row2" style="margin-top:10px;">
-        <div>
-          <label>Warstwa kolei</label>
-          <select id="railOverlay">
-            <option value="off" selected>Wyłączona</option>
-            <option value="on">Włączona (OpenRailwayMap)</option>
-          </select>
-        </div>
-        <div>
-          <label>Źródło danych</label>
-          <select id="dataSource">
-            <option value="real" selected>Realne (weryfikuj połączenia)</option>
-            <option value="offline">Offline (symulacja)</option>
-          </select>
-        </div>
       </div>
 
       <div class="error" id="errorBox"></div>
       <div class="warn" id="warnBox"></div>
 
-      <!-- WYNIK -->
       <div class="sectionTitle">
         <strong>Wynik trasy</strong>
-        <span class="pill" id="routeMeta">Brak trasy</span>
+        <span class="pill" id="routeMeta">—</span>
       </div>
 
       <div class="routeCard" id="routeCard">
-        <div class="hint">Wpisz trasę i kliknij <span class="kbd">Szukaj</span>.</div>
+        <div class="hint">
+          Wpisz <span class="kbd">Skąd</span> i <span class="kbd">Dokąd</span>, wybierz datę
+          i kliknij <span class="kbd">Szukaj</span>.
+        </div>
       </div>
 
-      <!-- ZAKUP -->
-      <div class="sectionTitle">
-        <strong>Zakup biletu</strong>
-        <span class="pill">link</span>
-      </div>
-      <a class="btn-green" id="buyLink" href="#" target="_blank" rel="noopener noreferrer">Kup bilet</a>
-
-      <!-- OFERTY -->
-      <div class="sectionTitle" style="margin-top:14px;">
-        <strong>Oferty</strong>
-        <span class="pill">wyniki</span>
-      </div>
-      <div class="list" id="offers"></div>
-
-      <div class="footerHint">
-        W trybie <span class="kbd">Realne</span> aplikacja nie powinna “wymyślać” połączeń.
-        W trybie <span class="kbd">Offline</span> wyniki są symulacją.<br/>
-        Warstwa kolei pokazuje sieć torów (overlay), a polilinia daje bardziej naturalny przebieg trasy.
-      </div>
     </div>
   </div>
+
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
