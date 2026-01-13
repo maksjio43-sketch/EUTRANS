@@ -1,10 +1,14 @@
-// app.js (EUTrans MAP-FIX v1) — guarantees map init + clear diagnostics
+// app.js (EUTrans PKP-first v1)
+// - Train-only
+// - No fake routes: REAL only when PKP proxy works; otherwise clear MOCK banner
+// - PLN
+// - Map: tile fallback + OpenRailwayMap overlay toggle
+// - Stations autocomplete: for now uses cities-eu.js as fallback, later switches to /stations from Worker
+
 (() => {
   const $ = (id) => document.getElementById(id);
 
-  const mapEl = $("map");
-  const mapStatus = $("mapStatus");
-
+  // UI
   const fromEl = $("from");
   const toEl = $("to");
   const dateEl = $("date");
@@ -13,6 +17,8 @@
   const maxTransfersEl = $("maxTransfers");
   const viasEl = $("vias");
   const currencyEl = $("currency");
+  const railOverlayEl = $("railOverlay");
+  const providerEl = $("provider");
 
   const warnBox = $("warnBox");
   const errorBox = $("errorBox");
@@ -20,11 +26,17 @@
   const routeCard = $("routeCard");
   const routeMeta = $("routeMeta");
   const statsPill = $("statsPill");
-  const citiesDL = $("cities");
+  const stationsDL = $("stations");
+  const modePill = $("modePill");
 
-  const CITIES = window.CITIES_EU || [];
+  const mapEl = $("map");
+  const mapOverlay = $("mapOverlay");
 
-  // -------- helpers --------
+  // IMPORTANT: set your Worker URL here after you deploy it
+  // Example: https://eutrans-pkp.<your-subdomain>.workers.dev
+  const WORKER_URL = ""; // <-- wkleisz później
+
+  // ---------------- Helpers ----------------
   const norm = (s) =>
     (s || "")
       .trim()
@@ -50,63 +62,163 @@
     hide(errorBox);
     show(warnBox, msg);
   }
+  function clearMsgs() {
+    hide(errorBox);
+    hide(warnBox);
+  }
+
+  function setModePill(mode, ok) {
+    if (!modePill) return;
+    modePill.textContent = `TRYB: ${mode}`;
+    modePill.className = ok ? "pill ok" : "pill warn";
+  }
 
   function fmtTime(mins) {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
-  }
-  function iconFor(mode) {
-    if (mode === "train") return "🚆";
-    if (mode === "bus") return "🚌";
-    if (mode === "flight") return "✈️";
-    if (mode === "ferry") return "⛴️";
-    return "🧭";
+    const m = Math.max(0, Math.round(Number(mins) || 0));
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return h ? `${h}h ${String(mm).padStart(2, "0")}m` : `${mm}m`;
   }
 
-  // -------- hard diagnostics first --------
-  if (!mapEl) {
-    console.error("Brak elementu #map w HTML.");
-    showError("Błąd: brak elementu mapy (#map) w index.html.");
-    return;
+  function pln(amount) {
+    const a = Number(amount);
+    if (!Number.isFinite(a)) return "—";
+    return `${Math.round(a)} PLN`;
   }
 
-  if (typeof L === "undefined") {
-    console.error("Leaflet (L) nie jest zdefiniowany — CDN blokowany / nie doładował się.");
-    if (mapStatus) {
-      mapStatus.innerHTML =
-        "❌ Leaflet nie wczytał się.<br/>" +
-        "Najczęściej: blokada CDN (AdBlock/Brave) albo brak internetu.<br/>" +
-        "Spróbuj: wyłącz adblock na stronie i odśwież (Ctrl+F5).";
+  // ---------------- Data (fallback suggestions from cities-eu.js) ----------------
+  const CITIES = window.CITIES_EU || [];
+
+  if (statsPill) statsPill.textContent = `Miasta: ${CITIES.length.toLocaleString("pl-PL")}`;
+
+  const exactCity = new Map();
+  const prefixCity = new Map();
+  for (let i = 0; i < CITIES.length; i++) {
+    const c = CITIES[i];
+    if (!c?.name) continue;
+    exactCity.set(norm(c.name), c);
+    if (c.pl) exactCity.set(norm(c.pl), c);
+
+    const base = c.pl || c.name;
+    const key = norm(base).slice(0, 2);
+    if (!prefixCity.has(key)) prefixCity.set(key, []);
+    prefixCity.get(key).push(i);
+  }
+
+  function cityDisplay(c) {
+    const base = c.pl || c.name;
+    return c.cc ? `${base} (${c.cc})` : base;
+  }
+
+  function setDatalist(values) {
+    if (!stationsDL) return;
+    stationsDL.innerHTML = "";
+    for (const v of values) {
+      const opt = document.createElement("option");
+      opt.value = v;
+      stationsDL.appendChild(opt);
     }
-    showError("Leaflet nie wczytał się (blokada CDN). Wyłącz AdBlock / spróbuj innej przeglądarki i odśwież Ctrl+F5.");
-    return;
   }
 
-  // -------- map init (always on load) --------
+  function suggestFromCities(value) {
+    if (!stationsDL) return;
+    const v = norm(value);
+    if (v.length < 2) return;
+    const key = v.slice(0, 2);
+    const idxs = prefixCity.get(key) || [];
+    const out = [];
+    for (let k = 0; k < idxs.length && out.length < 120; k++) {
+      const c = CITIES[idxs[k]];
+      const dn = cityDisplay(c);
+      if (norm(dn).startsWith(v) || norm(c.name).startsWith(v) || (c.pl && norm(c.pl).startsWith(v))) out.push(dn);
+    }
+    if (out.length) setDatalist(out);
+  }
+
+  // ---------------- Map (robust tile fallback) ----------------
   let map = null;
+  let baseLayer = null;
   let railLayer = null;
   let markers = [];
   let poly = null;
 
+  const TILE_SOURCES = [
+    { name: "OSM", url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", options: { attribution: "© OpenStreetMap", maxZoom: 19 } },
+    { name: "CARTO (light)", url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", options: { attribution: "© OpenStreetMap © CARTO", maxZoom: 20, subdomains: "abcd" } },
+    { name: "CARTO (dark)", url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", options: { attribution: "© OpenStreetMap © CARTO", maxZoom: 20, subdomains: "abcd" } },
+  ];
+
+  function overlay(msg) {
+    if (!mapOverlay) return;
+    mapOverlay.innerHTML = msg;
+    mapOverlay.style.display = "flex";
+  }
+  function overlayOff() {
+    if (!mapOverlay) return;
+    mapOverlay.style.display = "none";
+  }
+
+  function setBaseLayerByIndex(idx) {
+    if (!map) return;
+    if (baseLayer) map.removeLayer(baseLayer);
+
+    const src = TILE_SOURCES[idx];
+    baseLayer = L.tileLayer(src.url, src.options).addTo(map);
+
+    let ok = false;
+    const okHandler = () => {
+      if (!ok) {
+        ok = true;
+        overlayOff();
+      }
+    };
+    const errHandler = () => {
+      setTimeout(() => {
+        if (ok) return;
+        const next = idx + 1;
+        if (next < TILE_SOURCES.length) {
+          overlay(`⚠️ Nie ładują się kafelki z <b>${src.name}</b>… przełączam na <b>${TILE_SOURCES[next].name}</b>.`);
+          setBaseLayerByIndex(next);
+        } else {
+          overlay(`❌ Nie udało się wczytać mapy.<br/>Wyłącz VPN/AdBlock i zrób Ctrl+F5.`);
+        }
+      }, 800);
+    };
+
+    baseLayer.on("load", okHandler);
+    baseLayer.on("tileerror", errHandler);
+
+    overlay(`Ładowanie mapy… (${src.name})`);
+  }
+
+  function applyRailOverlay() {
+    if (!map || !railLayer || !railOverlayEl) return;
+    const v = (railOverlayEl.value || "").toLowerCase();
+    const on = v === "on" || v.includes("włącz") || v.includes("wlacz");
+    const has = map.hasLayer(railLayer);
+    if (on && !has) railLayer.addTo(map);
+    if (!on && has) map.removeLayer(railLayer);
+  }
+
   function initMap() {
     if (map) return;
+    if (!mapEl) return showError("Brak elementu mapy (#map).");
+    if (typeof L === "undefined") return showError("Leaflet nie wczytał się. Wyłącz VPN/AdBlock i odśwież Ctrl+F5.");
 
     map = L.map("map", { zoomControl: true }).setView([52.2297, 21.0122], 5);
+    setBaseLayerByIndex(0);
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap",
-      maxZoom: 19,
-    }).addTo(map);
-
-    // Railway overlay ON by default
     railLayer = L.tileLayer("https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png", {
       attribution: "© OpenRailwayMap",
       opacity: 0.65,
       maxZoom: 19,
-    }).addTo(map);
+    });
 
-    if (mapStatus) mapStatus.remove();
+    applyRailOverlay();
+
+    setTimeout(() => map && map.invalidateSize(true), 200);
+    setTimeout(() => map && map.invalidateSize(true), 900);
+    window.addEventListener("resize", () => map && map.invalidateSize(true));
   }
 
   function clearMap() {
@@ -117,24 +229,18 @@
     poly = null;
   }
 
-  function drawMarkers(path) {
+  function drawMarkers(points) {
     if (!map) return;
     markers.forEach((m) => map.removeLayer(m));
     markers = [];
-    path.forEach((c, idx) => {
-      const label = idx === 0 ? "Start" : idx === path.length - 1 ? "Cel" : "Przesiadka";
-      const name = c.pl || c.name;
-      markers.push(L.marker([c.lat, c.lng]).addTo(map).bindPopup(`${label}: ${name}`));
+    points.forEach((p, idx) => {
+      const label = idx === 0 ? "Start" : idx === points.length - 1 ? "Cel" : "Przesiadka";
+      markers.push(L.marker([p.lat, p.lng]).addTo(map).bindPopup(`${label}: ${p.name}`));
     });
   }
 
-  function fitTo(path) {
-    if (!map) return;
-    const bounds = L.latLngBounds(path.map((c) => [c.lat, c.lng]));
-    map.fitBounds(bounds, { padding: [40, 40] });
-  }
-
   async function osrmPolyline(a, b) {
+    // For MVP: OSRM driving as geometry; overlay rail gives “rail context”
     const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("OSRM");
@@ -144,164 +250,76 @@
     return coords.map(([lng, lat]) => [lat, lng]);
   }
 
-  async function drawPolyline(path) {
+  async function drawPolyline(points) {
     if (!map) return;
     if (poly) map.removeLayer(poly);
     poly = null;
 
     const stitched = [];
-    for (let i = 0; i < path.length - 1; i++) {
+    for (let i = 0; i < points.length - 1; i++) {
       try {
-        const seg = await osrmPolyline(path[i], path[i + 1]);
+        const seg = await osrmPolyline(points[i], points[i + 1]);
         stitched.push(...seg);
       } catch {
-        stitched.push([path[i].lat, path[i].lng], [path[i + 1].lat, path[i + 1].lng]);
+        stitched.push([points[i].lat, points[i].lng], [points[i + 1].lat, points[i + 1].lng]);
       }
     }
-    poly = L.polyline(stitched, { color: "#3b82f6", weight: 4, opacity: 0.85 }).addTo(map);
+    poly = L.polyline(stitched, { color: "#3b82f6", weight: 4, opacity: 0.9 }).addTo(map);
   }
 
-  // -------- cities: datalist + lookup (PL names supported if `pl` exists in cities-eu.js) --------
-  if (statsPill) statsPill.textContent = `Miasta: ${CITIES.length.toLocaleString("pl-PL")}`;
-
-  const exactIndex = new Map();
-  const prefixIndex = new Map();
-
-  for (let i = 0; i < CITIES.length; i++) {
-    const c = CITIES[i];
-    if (!c?.name) continue;
-    exactIndex.set(norm(c.name), c);
-    if (c.pl) exactIndex.set(norm(c.pl), c);
-
-    const key = norm(c.pl || c.name).slice(0, 2);
-    if (!prefixIndex.has(key)) prefixIndex.set(key, []);
-    prefixIndex.get(key).push(i);
+  function fitTo(points) {
+    if (!map) return;
+    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]));
+    map.fitBounds(bounds, { padding: [40, 40] });
   }
 
-  function displayName(c) {
-    const base = c.pl || c.name;
-    return c.cc ? `${base} (${c.cc})` : base;
-  }
-
-  function setDatalist(values) {
-    if (!citiesDL) return;
-    citiesDL.innerHTML = "";
-    for (const v of values) {
-      const opt = document.createElement("option");
-      opt.value = v;
-      citiesDL.appendChild(opt);
+  // ---------------- Provider: PKP via Worker ----------------
+  async function workerFetch(path, params) {
+    if (!WORKER_URL) throw new Error("NO_WORKER_URL");
+    const url = new URL(WORKER_URL.replace(/\/$/, "") + path);
+    for (const [k, v] of Object.entries(params || {})) {
+      if (v !== undefined && v !== null && String(v).length) url.searchParams.set(k, String(v));
     }
+    const res = await fetch(url.toString(), { method: "GET" });
+    if (!res.ok) throw new Error("WORKER_HTTP");
+    return res.json();
   }
 
-  function suggest(value) {
-    if (!citiesDL) return;
-    const v = norm(value);
-    if (v.length < 2) return;
-    const key = v.slice(0, 2);
-    const idxs = prefixIndex.get(key) || [];
-    const out = [];
-    for (let k = 0; k < idxs.length && out.length < 120; k++) {
-      const c = CITIES[idxs[k]];
-      const dn = displayName(c);
-      if (norm(dn).startsWith(v) || norm(c.name).startsWith(v) || (c.pl && norm(c.pl).startsWith(v))) out.push(dn);
+  async function pkpStationsSuggest(q) {
+    const data = await workerFetch("/stations", { q });
+    return Array.isArray(data?.stations) ? data.stations : [];
+  }
+
+  async function pkpJourneys(query) {
+    const data = await workerFetch("/journeys", query);
+    return Array.isArray(data?.journeys) ? data.journeys : [];
+  }
+
+  // ---------------- MOCK (UI test) ----------------
+  function mockStationsSuggest(q) {
+    // fallback: cities list
+    suggestFromCities(q);
+    return [];
+  }
+
+  function mockJourney(fromName, toName, date, minTransfer, maxTransfers, viasArr) {
+    // MOCK is clearly marked, no pretending “real PKP”
+    const base = [
+      { from: fromName, to: (viasArr[0] || toName), dep: "08:10", arr: "10:05", train: "IC 1234", pricePLN: 79, durationMin: 115, link: "#" },
+    ];
+    if (viasArr.length) {
+      base.push({ from: viasArr[0], to: toName, dep: "10:30", arr: "12:20", train: "TLK 4567", pricePLN: 49, durationMin: 110, link: "#" });
     }
-    if (out.length) setDatalist(out);
+    return {
+      id: "MOCK-1",
+      isMock: true,
+      legs: base,
+      totalPLN: base.reduce((s, x) => s + x.pricePLN, 0),
+      totalMin: base.reduce((s, x) => s + x.durationMin, 0) + (base.length > 1 ? minTransfer : 0),
+    };
   }
 
-  function findCity(v) {
-    const x = norm(v);
-    const stripped = x.replace(/\s*\([a-z]{2}\)\s*$/i, "");
-    return exactIndex.get(x) || exactIndex.get(stripped) || null;
-  }
-
-  function parseVias(str) {
-    const parts = (str || "").split(",").map(s => s.trim()).filter(Boolean);
-    const vias = [];
-    const unknown = [];
-    for (const p of parts) {
-      const c = findCity(p);
-      if (c) vias.push(c); else unknown.push(p);
-    }
-    return { vias, unknown };
-  }
-
-  function buildPath(fromCity, toCity, vias, maxTransfers) {
-    return [fromCity, ...vias.slice(0, Math.max(0, maxTransfers)), toCity];
-  }
-
-  if (citiesDL) setDatalist(CITIES.slice(0, 300).map(displayName));
-  if (fromEl) fromEl.addEventListener("input", (e) => suggest(e.target.value));
-  if (toEl) toEl.addEventListener("input", (e) => suggest(e.target.value));
-  if (viasEl) viasEl.addEventListener("input", (e) => suggest((e.target.value.split(",").pop() || "").trim()));
-
-  // date default
-  if (dateEl && !dateEl.value) {
-    const d = new Date();
-    dateEl.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  // -------- PLN conversion (ECB) --------
-  const FX_KEY = "eutrans:fx:ecb:v3";
-  async function getEurToPlnRate() {
-    try {
-      const cached = JSON.parse(localStorage.getItem(FX_KEY) || "null");
-      if (cached?.rate && Date.now() - cached.ts < 12 * 60 * 60 * 1000) return cached.rate;
-    } catch {}
-    const res = await fetch("https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml");
-    if (!res.ok) throw new Error("ECB");
-    const xml = await res.text();
-    const m = xml.match(/currency='PLN'\s+rate='([0-9.]+)'/);
-    if (!m) throw new Error("ECB PLN missing");
-    const rate = parseFloat(m[1]);
-    localStorage.setItem(FX_KEY, JSON.stringify({ ts: Date.now(), rate }));
-    return rate;
-  }
-  async function convert(amount, fromCur, toCur) {
-    const a = Number(amount);
-    if (!Number.isFinite(a)) return a;
-    if (fromCur === toCur) return a;
-    const rate = await getEurToPlnRate();
-    if (fromCur === "EUR" && toCur === "PLN") return a * rate;
-    if (fromCur === "PLN" && toCur === "EUR") return a / rate;
-    return a;
-  }
-
-  // -------- REAL schedules only (no fake routes) --------
-  async function fetchSchedules({ fromName, toName, date, currency, limit = 40 }) {
-    const url = new URL("https://omio.com/b2b-chatgpt-plugin/schedules");
-    url.searchParams.set("departureLocation", fromName);
-    url.searchParams.set("arrivalLocation", toName);
-    url.searchParams.set("departureDate", date);
-    url.searchParams.set("currency", currency);
-    url.searchParams.set("sortingField", "price");
-    url.searchParams.set("sortingOrder", "ascending");
-    url.searchParams.set("limit", String(limit));
-    url.searchParams.set("offset", "0");
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error("SCHEDULES_HTTP");
-    const data = await res.json();
-    return Array.isArray(data?.schedules) ? data.schedules : [];
-  }
-
-  function toDT(x) {
-    const d = new Date(x);
-    return Number.isFinite(d.getTime()) ? d : null;
-  }
-
-  function chooseLegWithMinTransfer(schedules, afterArrival, minTransferMin) {
-    const sorted = schedules.slice().sort((a, b) =>
-      (Number(a.price) - Number(b.price)) || (new Date(a.departureDateAndTime) - new Date(b.departureDateAndTime))
-    );
-    if (!afterArrival) return sorted[0] || null;
-    const threshold = new Date(afterArrival.getTime() + minTransferMin * 60000);
-    for (const s of sorted) {
-      const dep = toDT(s.departureDateAndTime);
-      if (dep && dep >= threshold) return s;
-    }
-    return null;
-  }
-
-  // -------- render --------
+  // ---------------- Rendering ----------------
   function renderStart() {
     if (routeMeta) routeMeta.textContent = "—";
     if (routeCard) {
@@ -310,147 +328,194 @@
     if (offersEl) offersEl.innerHTML = "";
   }
 
-  async function renderResult(path, chosen, currency, minTransferMin, firstLeg) {
-    const transfers = Math.max(0, path.length - 2);
-    if (routeMeta) routeMeta.textContent = `${path[0].pl || path[0].name} → ${path[path.length - 1].pl || path[path.length - 1].name} • przesiadki: ${transfers}`;
+  function renderJourneys(journeys, currency) {
+    if (!journeys.length) {
+      if (routeMeta) routeMeta.textContent = "Brak trasy";
+      if (routeCard) routeCard.innerHTML = `<div class="hint">Brak wyników. Zmień datę / trasę / przesiadki.</div>`;
+      if (offersEl) offersEl.innerHTML = "";
+      return;
+    }
 
-    let totalMin = 0;
-    let totalPrice = 0;
+    // pick best (cheapest) for now; later add optimize mode
+    const best = journeys.slice().sort((a, b) => (a.totalPLN - b.totalPLN) || (a.totalMin - b.totalMin))[0];
 
-    const legs = await Promise.all(chosen.map(async (s, idx) => {
-      const srcCur = s.currency || "EUR";
-      const price = await convert(Number(s.price), srcCur, currency);
+    if (routeMeta) routeMeta.textContent = `${fmtTime(best.totalMin)} • ${pln(best.totalPLN)} • przesiadki: ${Math.max(0, best.legs.length - 1)}`;
 
-      totalPrice += Number.isFinite(price) ? price : 0;
-      totalMin += Number(s.durationInMinutes || 0);
-
-      const dep = toDT(s.departureDateAndTime);
-      const arr = toDT(s.arrivalDateAndTime);
-      const depStr = dep ? dep.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" }) : "";
-      const arrStr = arr ? arr.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" }) : "";
-
-      return `
-        <div class="offer">
-          <div>
-            <div style="font-weight:900">${iconFor(s.travelMode)} ${path[idx].pl || path[idx].name} → ${path[idx + 1].pl || path[idx + 1].name}</div>
-            <small>${s.travelMode}${s.carrier ? ` • ${s.carrier}` : ""} • ${fmtTime(Number(s.durationInMinutes||0))} • ${Math.round(price)} ${currency} ${depStr && arrStr ? `• ${depStr} → ${arrStr}` : ""}</small>
-          </div>
-          <a class="pillLink" href="${s.deeplink || "https://www.omio.com/"}" target="_blank" rel="noopener noreferrer">Kup</a>
-        </div>
-      `;
-    }));
-
-    if (chosen.length > 1) totalMin += (chosen.length - 1) * minTransferMin;
+    const badge = best.isMock
+      ? `<span class="pill warn" style="margin-left:8px;">MOCK (test UI)</span>`
+      : `<span class="pill ok" style="margin-left:8px;">REAL PKP</span>`;
 
     if (routeCard) {
       routeCard.innerHTML = `
-        <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
           <div>
-            <div style="font-weight:900; font-size:15px;">Trasa (realne połączenia)</div>
-            <div class="hint">Min. czas na przesiadkę: <span class="kbd">${minTransferMin} min</span></div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-weight:900;">${fmtTime(totalMin)}</div>
-            <div class="hint">${Math.round(totalPrice)} ${currency}</div>
+            <div style="font-weight:900; font-size:15px;">Najlepsza trasa${badge}</div>
+            <div class="hint">Kolej (train-only) • ${fmtTime(best.totalMin)} • ${pln(best.totalPLN)}</div>
           </div>
         </div>
-        <div style="margin-top:10px">${legs.join("")}</div>
       `;
     }
 
     if (offersEl) {
       offersEl.innerHTML = "";
-      const top = (firstLeg || []).slice(0, 6);
-      for (const s of top) {
-        const srcCur = s.currency || "EUR";
-        const price = await convert(Number(s.price), srcCur, currency);
+      for (const leg of best.legs) {
         const div = document.createElement("div");
         div.className = "offer";
         div.innerHTML = `
           <div>
-            <div style="font-weight:900">${iconFor(s.travelMode)} ${s.travelMode} • ${Math.round(price)} ${currency}</div>
-            <small>${fmtTime(Number(s.durationInMinutes||0))} • ${s.carrier || ""}</small>
+            <div style="font-weight:900">🚆 ${leg.from} → ${leg.to}</div>
+            <small>${leg.train} • ${leg.dep} → ${leg.arr} • ${fmtTime(leg.durationMin)} • ${pln(leg.pricePLN)}</small>
           </div>
-          <a class="pillLink" href="${s.deeplink || "https://www.omio.com/"}" target="_blank" rel="noopener noreferrer">Kup</a>
+          <a class="pillLink" href="${leg.link || "#"}" target="_blank" rel="noopener noreferrer">Kup</a>
         `;
         offersEl.appendChild(div);
       }
     }
   }
 
+  // map points from city fallback (until we have station coordinates from PKP)
+  function findCityPoint(name) {
+    const c = exactCity.get(norm(name)) || exactCity.get(norm(name.replace(/\s*\([a-z]{2}\)\s*$/i, "")));
+    if (!c) return null;
+    return { name: cityDisplay(c), lat: c.lat, lng: c.lng };
+  }
+
+  function parseVias(str) {
+    return (str || "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+
+  // ---------------- Search ----------------
   async function onSearch() {
-    hide(errorBox); hide(warnBox);
+    clearMsgs();
+    initMap();
+    applyRailOverlay();
 
-    const fromVal = (fromEl?.value || "").trim();
-    const toVal = (toEl?.value || "").trim();
-    const date = dateEl?.value || "";
-    const currency = currencyEl?.value || "PLN";
-    const minTransferMin = parseInt(minTransferEl?.value || "15", 10);
+    const fromName = (fromEl?.value || "").trim();
+    const toName = (toEl?.value || "").trim();
+    const date = (dateEl?.value || "").trim();
+    const minTransfer = parseInt(minTransferEl?.value || "15", 10);
     const maxTransfers = parseInt(maxTransfersEl?.value || "1", 10);
+    const currency = (currencyEl?.value || "PLN").trim();
+    const viasArr = parseVias(viasEl?.value || "");
 
-    if (!fromVal) return showError("Wpisz miasto w polu „Skąd”.");
-    if (!toVal) return showError("Wpisz miasto w polu „Dokąd”.");
+    if (!fromName) return showError("Wpisz „Skąd”.");
+    if (!toName) return showError("Wpisz „Dokąd”.");
     if (!date) return showError("Wybierz datę.");
 
-    const fromCity = findCity(fromVal);
-    const toCity = findCity(toVal);
-    if (!fromCity) return showError("Nie rozpoznano miasta „Skąd” (wybierz z listy).");
-    if (!toCity) return showError("Nie rozpoznano miasta „Dokąd” (wybierz z listy).");
+    // Decide provider
+    const forced = (providerEl?.value || "auto").toLowerCase();
+    const wantMock = forced === "mock";
+    const canUsePKP = !!WORKER_URL && !wantMock;
 
-    const { vias, unknown } = parseVias(viasEl?.value || "");
-    if (unknown.length) showWarn(`Nie rozpoznano: ${unknown.join(", ")} (pominięte).`);
+    let journeys = [];
 
-    const path = buildPath(fromCity, toCity, vias, maxTransfers);
-
-    clearMap();
-    drawMarkers(path);
-    await drawPolyline(path);
-    fitTo(path);
-
-    try {
-      const chosen = [];
-      let lastArrival = null;
-      let firstLegSchedules = null;
-
-      for (let i = 0; i < path.length - 1; i++) {
-        const aName = path[i].pl || path[i].name;
-        const bName = path[i + 1].pl || path[i + 1].name;
-
-        const schedules = await fetchSchedules({ fromName: aName, toName: bName, date, currency });
-        if (!schedules.length) {
-          showError(`Brak połączenia dla odcinka: ${aName} → ${bName}.`);
-          if (routeMeta) routeMeta.textContent = "Brak trasy";
-          if (routeCard) routeCard.innerHTML = `<div class="hint">Brak wyników dla <span class="kbd">${aName} → ${bName}</span>.</div>`;
-          if (offersEl) offersEl.innerHTML = "";
-          return;
-        }
-
-        if (i === 0) firstLegSchedules = schedules;
-
-        const pick = chooseLegWithMinTransfer(schedules, lastArrival, minTransferMin);
-        if (!pick) {
-          showError(`Nie da się ułożyć przesiadki z min. czasem ${minTransferMin} min.`);
-          return;
-        }
-
-        chosen.push(pick);
-        lastArrival = toDT(pick.arrivalDateAndTime) || lastArrival;
+    if (canUsePKP) {
+      try {
+        journeys = await pkpJourneys({
+          from: fromName,
+          to: toName,
+          date,
+          minTransfer: String(minTransfer),
+          maxTransfers: String(maxTransfers),
+          vias: viasArr.join(",")
+        });
+        setModePill("REAL PKP", true);
+      } catch (e) {
+        setModePill("MOCK", false);
+        showWarn("PKP (Worker) niedostępne — działam w trybie MOCK (test UI).");
+        journeys = [mockJourney(fromName, toName, date, minTransfer, maxTransfers, viasArr)];
       }
+    } else {
+      setModePill("MOCK", false);
+      journeys = [mockJourney(fromName, toName, date, minTransfer, maxTransfers, viasArr)];
+    }
 
-      await renderResult(path, chosen, currency, minTransferMin, firstLegSchedules);
-    } catch (e) {
-      showError("Nie udało się pobrać realnych połączeń (CORS/limit).");
-      console.warn(e);
+    // Render
+    renderJourneys(journeys, currency);
+
+    // Map draw: for now use cities coordinates (fallback). Later PKP stations will provide lat/lon.
+    const points = [];
+    const pFrom = findCityPoint(fromName);
+    const pTo = findCityPoint(toName);
+    if (pFrom) points.push(pFrom);
+    for (const v of viasArr) {
+      const pv = findCityPoint(v);
+      if (pv) points.push(pv);
+    }
+    if (pTo) points.push(pTo);
+
+    if (points.length >= 2 && map) {
+      clearMap();
+      drawMarkers(points);
+      await drawPolyline(points);
+      fitTo(points);
+      map.invalidateSize(true);
+    } else {
+      showWarn("Mapa: brak współrzędnych dla wpisanych nazw (na razie używam miast z cities-eu.js). Po podpięciu PKP stacje będą dokładne.");
     }
   }
 
-  // ---- start ----
+  // ---------------- Autocomplete (stations) ----------------
+  let stationDebounce = null;
+
+  async function onStationInput(value) {
+    const q = (value || "").trim();
+    if (q.length < 2) return;
+
+    // If PKP Worker exists, use it for stations; otherwise fallback to cities
+    if (!WORKER_URL) return mockStationsSuggest(q);
+
+    try {
+      const stations = await pkpStationsSuggest(q);
+      // stations expected: [{name, id}] -> put name in datalist
+      const names = stations.map(s => s.name).filter(Boolean).slice(0, 80);
+      if (names.length) setDatalist(names);
+    } catch {
+      // fallback
+      suggestFromCities(q);
+    }
+  }
+
+  function bindAutocomplete(el) {
+    if (!el) return;
+    el.addEventListener("input", (e) => {
+      const v = e.target.value;
+      clearTimeout(stationDebounce);
+      stationDebounce = setTimeout(() => onStationInput(v), 180);
+    });
+  }
+
+  // ---------------- Boot ----------------
   document.addEventListener("DOMContentLoaded", () => {
     initMap();
+
+    // Default date = today
+    if (dateEl && !dateEl.value) {
+      const d = new Date();
+      dateEl.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
+    // no default from/to
     if (fromEl) fromEl.value = "";
     if (toEl) toEl.value = "";
+
+    // default PLN
+    if (currencyEl) currencyEl.value = "PLN";
+
+    // suggestions initial
+    setDatalist(CITIES.slice(0, 250).map(cityDisplay));
+
+    bindAutocomplete(fromEl);
+    bindAutocomplete(toEl);
+    bindAutocomplete(viasEl);
+
+    if (railOverlayEl) railOverlayEl.addEventListener("change", () => { initMap(); applyRailOverlay(); });
+    if (searchBtn) searchBtn.addEventListener("click", onSearch);
+
+    setModePill(WORKER_URL ? "AUTO" : "MOCK", !!WORKER_URL);
     renderStart();
   });
-
-  if (searchBtn) searchBtn.addEventListener("click", onSearch);
 })();
