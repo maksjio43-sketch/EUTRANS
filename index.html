@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>EUTRANS — PKP (kolej)</title>
+  <title>EUTRANS — Kolej (PKP)</title>
 
-  <!-- Leaflet CSS (jedna sztuka, fallback przez JS w razie potrzeby) -->
-  <link id="leafletCss" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
   <style>
     :root{
-      --bg:#0b1220; --muted:#93a4c7; --text:#e8eefc;
+      --bg:#0b1220; --card:#121a2a; --muted:#93a4c7; --text:#e8eefc;
       --accent:#3b82f6; --border:rgba(255,255,255,.08);
+      --warn:#f59e0b; --danger:#ef4444; --ok:#22c55e;
     }
     *{box-sizing:border-box}
     body{
@@ -27,6 +27,7 @@
       width:44px; height:44px; border-radius:14px;
       background: linear-gradient(135deg, var(--accent), #7c3aed);
       display:grid; place-items:center; font-weight:900;
+      box-shadow: 0 12px 30px rgba(59,130,246,.25);
     }
     h1{margin:0; font-size:22px;}
     .hint{color:var(--muted); font-size:13px;}
@@ -36,6 +37,9 @@
       background: rgba(255,255,255,.03);
       white-space:nowrap;
     }
+    .pill.ok{border-color: rgba(34,197,94,.35); color: rgba(34,197,94,.95); background: rgba(34,197,94,.08);}
+    .pill.warn{border-color: rgba(245,158,11,.35); color: rgba(245,158,11,.95); background: rgba(245,158,11,.08);}
+
     .grid{display:grid; grid-template-columns: 1.1fr .9fr; gap:16px;}
     @media (max-width: 980px){ .grid{grid-template-columns:1fr;} }
 
@@ -44,16 +48,32 @@
       border:1px solid var(--border);
       border-radius:18px;
       padding:16px;
+      box-shadow: 0 12px 35px rgba(0,0,0,.25);
+      backdrop-filter: blur(10px);
     }
     .mapwrap{padding:0; overflow:hidden;}
     #map{
+      height:540px; min-height:540px;
       width:100%;
-      height:540px;
-      min-height:540px; /* ważne: żeby nigdy nie spadło do 0 */
       background: rgba(255,255,255,.06);
       position:relative;
     }
     @media(max-width:980px){ #map{height:420px; min-height:420px;} }
+
+    .mapOverlay{
+      position:absolute; inset:12px;
+      border:1px dashed rgba(255,255,255,.18);
+      border-radius:14px;
+      display:flex; align-items:center; justify-content:center;
+      padding:12px;
+      color:rgba(255,255,255,.88);
+      background: rgba(0,0,0,.28);
+      text-align:center;
+      pointer-events:none;
+      font-size:14px;
+      line-height:1.35;
+      z-index: 500;
+    }
 
     label{display:block; font-size:13px; color:var(--muted); margin:0 0 6px;}
     input, select, button{
@@ -66,41 +86,55 @@
       outline:none;
       font-size:16px;
     }
-    .row{
-      display:grid;
-      grid-template-columns: 1.8fr 1.8fr 210px 150px;
-      gap:12px;
+    input:focus, select:focus{
+      border-color: rgba(59,130,246,.6);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.18);
     }
-    .row2{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:12px;
-      margin-top:12px;
-    }
+
+    .row{display:grid; grid-template-columns: 1.8fr 1.8fr 210px 150px; gap:12px;}
+    .row2{display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px;}
     @media (max-width: 980px){ .row,.row2{grid-template-columns:1fr;} }
 
-    .btn{
-      background: var(--accent);
-      color:white;
-      font-weight:900;
-      cursor:pointer;
-      border:none;
-    }
+    .btn{background: var(--accent); color:white; font-weight:900; cursor:pointer;}
+    .btn:hover{filter:brightness(1.07)}
 
-    .mapOverlay{
-      position:absolute; inset:12px;
-      border:1px dashed rgba(255,255,255,.18);
-      border-radius:14px;
-      display:flex; align-items:center; justify-content:center;
-      padding:12px;
-      color:rgba(255,255,255,.78);
-      background: rgba(0,0,0,.25);
-      text-align:center;
-      pointer-events:none;
-      font-size:14px;
-      line-height:1.35;
-      z-index: 500;
+    .warnBox, .errorBox{
+      display:none; margin-top:12px; padding:12px; border-radius:12px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      color:var(--text);
     }
+    .warnBox{border-color: rgba(245,158,11,.25); background: rgba(245,158,11,.12);}
+    .errorBox{border-color: rgba(239,68,68,.25); background: rgba(239,68,68,.12);}
+    /* === POPRAWKA WYRÓWNANIA SKĄD / DOKĄD === */
+
+.row{
+  display:grid;
+  grid-template-columns: 1.8fr 1.8fr 210px 150px;
+  gap:12px;
+  align-items:flex-start; /* 🔥 TO PODNOSI POLA */
+}
+
+label{
+  display:block;
+  font-size:13px;
+  color:var(--muted);
+  margin:0 0 8px;
+  line-height:1.2;
+}
+
+input, select, button{
+  width:100%;
+  padding:16px 18px;     /* 🔥 WIĘKSZE POLA */
+  border-radius:14px;
+  border:1px solid var(--border);
+  background: rgba(255,255,255,.05);
+  color:var(--text);
+  outline:none;
+  font-size:17px;
+  min-height:54px;
+}
+
   </style>
 </head>
 
@@ -111,12 +145,12 @@
       <div class="logo">EU</div>
       <div>
         <h1>EUTRANS — Kolej (PKP)</h1>
-        <div class="hint">Trasy • przesiadki • ceny PLN • przekierowania</div>
+        <div class="hint">Mapa • miasta • później stacje PKP</div>
       </div>
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
       <span class="pill" id="statsPill">Miasta: …</span>
-      <span class="pill" id="modePill">TRYB: AUTO</span>
+      <span class="pill warn" id="modePill">TRYB: AUTO</span>
     </div>
   </header>
 
@@ -130,12 +164,12 @@
     <div class="card">
       <div class="row">
         <div>
-          <label>Skąd (stacja / miasto)</label>
-          <input id="from" list="stations" placeholder="np. Warszawa Centralna / Warszawa" autocomplete="off"/>
+          <label>Skąd (miasto / stacja)</label>
+          <input id="from" list="stations" placeholder="np. Warszawa / Berlin" autocomplete="off"/>
         </div>
         <div>
-          <label>Dokąd (stacja / miasto)</label>
-          <input id="to" list="stations" placeholder="np. Kraków Główny / Kraków" autocomplete="off"/>
+          <label>Dokąd (miasto / stacja)</label>
+          <input id="to" list="stations" placeholder="np. Kraków / Praga" autocomplete="off"/>
         </div>
         <div>
           <label>Data</label>
@@ -151,107 +185,54 @@
 
       <div class="row2">
         <div>
-          <label>Min. czas na przesiadkę</label>
-          <select id="minTransfer">
-            <option value="10">10 min</option>
-            <option value="15" selected>15 min</option>
-            <option value="20">20 min</option>
-            <option value="30">30 min</option>
-            <option value="45">45 min</option>
-            <option value="60">60 min</option>
-          </select>
-        </div>
-        <div>
-          <label>Maks. liczba przesiadek</label>
-          <select id="maxTransfers">
-            <option value="0">0</option>
-            <option value="1" selected>1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row2">
-        <div>
-          <label>Stacje poboczne (opcjonalnie)</label>
-          <input id="vias" placeholder="np. Poznań, Wrocław" autocomplete="off"/>
-        </div>
-        <div>
           <label>Warstwa kolei</label>
           <select id="railOverlay">
             <option value="off" selected>Wyłączona</option>
             <option value="on">Włączona</option>
           </select>
         </div>
-      </div>
-
-      <div class="row2">
-        <div>
-          <label>Waluta</label>
-          <select id="currency">
-            <option value="PLN" selected>PLN</option>
-            <option value="EUR">EUR</option>
-          </select>
-        </div>
         <div>
           <label>Źródło danych</label>
           <select id="provider">
-            <option value="auto" selected>Auto (PKP jeśli dostępne)</option>
+            <option value="auto" selected>Auto</option>
             <option value="mock">MOCK</option>
           </select>
         </div>
       </div>
+
+      <div class="warnBox" id="warnBox"></div>
+      <div class="errorBox" id="errorBox"></div>
     </div>
   </div>
 </div>
 
-<!-- Cities list -->
-<script src="./cities-eu.js"></script>
+<!-- Leaflet (jedna wersja) -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Loader: Leaflet JS z fallbackiem, a dopiero potem app.js -->
+<!-- Cache bust: wymusza aktualne pliki na GitHub Pages -->
 <script>
-  (function(){
-    // CSS fallback jeśli jsDelivr zablokowany
-    const css = document.getElementById('leafletCss');
-    const testCss = () => {
-      try {
-        // jeśli CSS nie dojdzie, widać to po braku reguł — robimy fallback
-        // (nie zawsze 100% wykrywalne, ale pomaga)
-      } catch {}
+  const V = Date.now(); // wersja na świeżo (cache-buster)
+
+  // 1) cities-eu.js
+  const cities = document.createElement('script');
+  cities.src = './cities-eu.js?v=' + V;
+  cities.onerror = () => {
+    window.CITIES_EU = [];
+    const el = document.getElementById('errorBox');
+    if (el) { el.style.display='block'; el.textContent = 'Nie wczytało cities-eu.js (brak pliku lub zła nazwa). Sprawdź czy w repo jest dokładnie cities-eu.js w (root).'; }
+  };
+  document.body.appendChild(cities);
+
+  // 2) app.js (dopiero po cities)
+  cities.onload = () => {
+    const app = document.createElement('script');
+    app.src = './app.js?v=' + V;
+    app.onerror = () => {
+      const el = document.getElementById('errorBox');
+      if (el) { el.style.display='block'; el.textContent = 'Nie wczytało app.js (sprawdź czy plik istnieje w repo w root).'; }
     };
-    testCss();
-
-    function loadScript(src, onOk, onErr){
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = onOk;
-      s.onerror = onErr;
-      document.head.appendChild(s);
-    }
-
-    function loadApp(){
-      const s = document.createElement('script');
-      s.src = "./app.js";
-      document.body.appendChild(s);
-    }
-
-    // 1) próbujemy jsDelivr
-    loadScript("https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js",
-      function(){ loadApp(); },
-      function(){
-        // 2) fallback na unpkg
-        loadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
-          function(){ loadApp(); },
-          function(){
-            // 3) jak oba padły — pokaż komunikat na mapie
-            const ov = document.getElementById('mapOverlay');
-            if (ov) ov.innerHTML = "❌ Nie udało się wczytać Leaflet (CDN zablokowany).<br/>Zrób Ctrl+F5 lub wyłącz blokery.";
-          }
-        );
-      }
-    );
-  })();
+    document.body.appendChild(app);
+  };
 </script>
 </body>
 </html>
