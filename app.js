@@ -3,303 +3,245 @@
 
   const fromEl = $("from");
   const toEl = $("to");
-  const viasEl = $("vias");
   const dateEl = $("date");
   const searchBtn = $("searchBtn");
   const railOverlayEl = $("railOverlay");
   const stationsDL = $("stations");
-
   const modePill = $("modePill");
   const statsPill = $("statsPill");
   const mapOverlay = $("mapOverlay");
-
   const warnBox = $("warnBox");
   const errorBox = $("errorBox");
 
-  // Twój działający Worker:
   const WORKER_URL = "https://eutrans.maksijo43.workers.dev";
 
-  // ---------- helpers ----------
   const norm = (s) =>
     (s || "")
       .trim()
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, ""); // usuwa akcenty: ł->l itd.
+      .replace(/[\u0300-\u036f]/g, "");
 
-  function show(el, msg) {
-    if (!el) return;
-    el.style.display = "block";
-    el.textContent = msg;
-  }
-  function hide(el) {
-    if (!el) return;
-    el.style.display = "none";
-    el.textContent = "";
-  }
-  function warn(msg) {
-    hide(errorBox);
-    show(warnBox, msg);
-  }
-  function err(msg) {
-    hide(warnBox);
-    show(errorBox, msg);
-  }
-  function clearMsg() {
-    hide(warnBox);
-    hide(errorBox);
-  }
+  const show = (el, msg) => { if (!el) return; el.style.display = "block"; el.textContent = msg; };
+  const hide = (el) => { if (!el) return; el.style.display = "none"; el.textContent = ""; };
+  const warn = (msg) => { hide(errorBox); show(warnBox, msg); };
+  const err  = (msg) => { hide(warnBox); show(errorBox, msg); };
 
-  function setMode(text, ok) {
+  const setMode = (text, ok) => {
     if (!modePill) return;
-    modePill.textContent = "TRYB: " + text;
+    modePill.textContent = `TRYB: ${text}`;
     modePill.className = ok ? "pill ok" : "pill warn";
-  }
+  };
 
-  function setDatalist(values) {
+  const setDatalist = (values) => {
     if (!stationsDL) return;
     stationsDL.innerHTML = "";
-    for (const v of values.slice(0, 140)) {
+    const seen = new Set();
+    for (const v of (values || []).slice(0, 140)) {
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
       const opt = document.createElement("option");
       opt.value = v;
       stationsDL.appendChild(opt);
     }
-  }
+  };
 
-  // ---------- cities fallback (FULL SEARCH + ranking) ----------
-  const CITIES = window.CITIES_EU || [];
-  if (statsPill) statsPill.textContent = "Miasta: " + (CITIES.length || 0).toLocaleString("pl-PL");
+  // ---------- Cities (fallback) ----------
+  const CITIES = Array.isArray(window.CITIES_EU) ? window.CITIES_EU : [];
+  if (statsPill) statsPill.textContent = `Miasta: ${CITIES.length.toLocaleString("pl-PL")}`;
 
-  function cityDisplay(c) {
-    const base = c.pl || c.name;
-    return c.cc ? `${base} (${c.cc})` : base;
-  }
-
-  // Precompute searchable strings to make it fast
   const CITY_INDEX = CITIES
-    .map((c, i) => {
-      const label = cityDisplay(c);
-      const a = norm(label);
-      const b = norm(c.name);
-      const p = c.pl ? norm(c.pl) : "";
-      return { i, c, label, a, b, p };
+    .map((c) => {
+      const label = (c && (c.pl || c.name)) ? (c.pl || c.name) + (c.cc ? ` (${c.cc})` : "") : "";
+      return { label, n: norm(label), n2: norm(c?.name), npl: norm(c?.pl) };
     })
-    .filter((x) => x.label && x.a);
+    .filter((x) => x.label && x.n);
 
-  // Ranking:
-  // 0 = prefix match (najlepsze)
-  // 1 = word-boundary match
-  // 2 = substring match
-  function scoreMatch(q, item) {
-    if (!q) return null;
-
-    const { a, b, p } = item;
-
-    // prefix
-    if (a.startsWith(q) || b.startsWith(q) || (p && p.startsWith(q))) return 0;
-
-    // word boundary (np. "Nowy" w "Kraków Nowy..." itd.)
+  const scoreMatch = (q, it) => {
+    if (it.n.startsWith(q) || it.n2.startsWith(q) || (it.npl && it.npl.startsWith(q))) return 0;
     const re = new RegExp(`(^|\\s|\\-|\\(|\\[)${q}`);
-    if (re.test(a) || re.test(b) || (p && re.test(p))) return 1;
-
-    // substring
-    if (a.includes(q) || b.includes(q) || (p && p.includes(q))) return 2;
-
+    if (re.test(it.n) || re.test(it.n2) || (it.npl && re.test(it.npl))) return 1;
+    if (it.n.includes(q) || it.n2.includes(q) || (it.npl && it.npl.includes(q))) return 2;
     return null;
-  }
+  };
 
-  function suggestCities(qRaw) {
+  const suggestCities = (qRaw) => {
     const q = norm(qRaw);
     if (q.length < 2) return [];
-
-    // Weź top N po rankingu + krótsze nazwy wyżej
     const hits = [];
-    for (const item of CITY_INDEX) {
-      const s = scoreMatch(q, item);
+    for (const it of CITY_INDEX) {
+      const s = scoreMatch(q, it);
       if (s === null) continue;
-      hits.push({ s, len: item.label.length, label: item.label });
+      hits.push({ s, len: it.label.length, label: it.label });
     }
+    hits.sort((a,b) => (a.s-b.s) || (a.len-b.len) || a.label.localeCompare(b.label,"pl"));
+    return hits.slice(0, 140).map(x => x.label);
+  };
 
-    hits.sort((x, y) => (x.s - y.s) || (x.len - y.len) || x.label.localeCompare(y.label, "pl"));
-
-    // uniq + limit
-    const out = [];
-    const seen = new Set();
-    for (const h of hits) {
-      if (seen.has(h.label)) continue;
-      seen.add(h.label);
-      out.push(h.label);
-      if (out.length >= 140) break;
-    }
-    return out;
-  }
-
-  // ---------- worker fetch ----------
-  async function workerFetch(path, params) {
-    const url = new URL(WORKER_URL.replace(/\/$/, "") + path);
-    for (const [k, v] of Object.entries(params || {})) {
+  // ---------- Worker ----------
+  const workerFetch = async (path, params) => {
+    const url = new URL(WORKER_URL.replace(/\/$/,"") + path);
+    for (const [k,v] of Object.entries(params||{})) {
       if (v !== undefined && v !== null && String(v).length) url.searchParams.set(k, String(v));
     }
-    const res = await fetch(url.toString(), { method: "GET" });
+    const res = await fetch(url.toString());
     if (!res.ok) throw new Error("WORKER_HTTP");
     return res.json();
-  }
+  };
 
-  async function pkpStations(q) {
-    // na razie worker zwraca [], ale zostawiamy
-    const data = await workerFetch("/stations", { q });
-    return Array.isArray(data && data.stations) ? data.stations : [];
-  }
-
-  // ---------- map ----------
+  // ---------- Map ----------
   let map = null;
   let baseLayer = null;
   let railLayer = null;
+  let tileLoaded = false;
 
   const TILE_SOURCES = [
-    { name: "OSM", url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", opt: { attribution: "© OpenStreetMap", maxZoom: 19 } },
-    { name: "CARTO light", url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", opt: { attribution: "© OSM © CARTO", maxZoom: 20, subdomains: "abcd" } },
-    { name: "CARTO dark", url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", opt: { attribution: "© OSM © CARTO", maxZoom: 20, subdomains: "abcd" } },
+    { name:"OSM", url:"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", opt:{ attribution:"© OpenStreetMap", maxZoom:19 } },
+    { name:"CARTO light", url:"https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", opt:{ attribution:"© OSM © CARTO", maxZoom:20, subdomains:"abcd" } },
+    { name:"CARTO dark", url:"https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", opt:{ attribution:"© OSM © CARTO", maxZoom:20, subdomains:"abcd" } }
   ];
 
-  function overlay(msg) {
+  const overlay = (html) => {
     if (!mapOverlay) return;
-    mapOverlay.innerHTML = msg;
+    mapOverlay.innerHTML = html;
     mapOverlay.style.display = "flex";
-  }
-  function overlayOff() {
+  };
+  const overlayOff = () => {
     if (!mapOverlay) return;
     mapOverlay.style.display = "none";
-  }
+  };
 
-  function setBase(idx) {
+  const setBase = (idx) => {
     if (!map) return;
     if (baseLayer) map.removeLayer(baseLayer);
-
     const src = TILE_SOURCES[idx];
+    tileLoaded = false;
+
     baseLayer = L.tileLayer(src.url, src.opt).addTo(map);
 
-    let loaded = false;
-    baseLayer.on("load", () => {
-      loaded = true;
-      overlayOff();
-    });
+    baseLayer.on("load", () => { tileLoaded = true; overlayOff(); });
     baseLayer.on("tileerror", () => {
       setTimeout(() => {
-        if (loaded) return;
+        if (tileLoaded) return;
         const next = idx + 1;
         if (next < TILE_SOURCES.length) {
-          overlay(`⚠️ Kafelki z <b>${src.name}</b> nie ładują się. Przełączam na <b>${TILE_SOURCES[next].name}</b>…`);
+          overlay(`⚠️ Nie ładują się kafelki <b>${src.name}</b>. Przełączam na <b>${TILE_SOURCES[next].name}</b>…`);
           setBase(next);
         } else {
-          overlay("❌ Mapa nie ładuje kafelków. Zrób Ctrl+F5 / wyłącz blokery / spróbuj inną sieć.");
+          overlay(`❌ Nie mogę załadować mapy (kafelki blokowane).<br/>Spróbuj Ctrl+F5, wyłącz adblock, albo inną sieć.`);
         }
       }, 800);
     });
 
-    overlay("Ładowanie mapy… (" + src.name + ")");
-  }
+    overlay(`Ładowanie mapy… (${src.name})`);
+  };
 
-  function applyRail() {
+  const applyRail = () => {
     if (!map || !railLayer || !railOverlayEl) return;
-    const on = (railOverlayEl.value || "").toLowerCase() === "on";
+    const on = railOverlayEl.value === "on";
     const has = map.hasLayer(railLayer);
     if (on && !has) railLayer.addTo(map);
     if (!on && has) map.removeLayer(railLayer);
-  }
+  };
 
-  function initMap() {
+  const initMap = () => {
     const el = $("map");
     if (!el) return;
 
     if (typeof L === "undefined") {
-      err("Leaflet nie wczytał się. Zrób Ctrl+F5 lub wyłącz blokery.");
+      overlay(`❌ Leaflet się nie wczytał.<br/>Zrób Ctrl+F5 lub wyłącz blokery.`);
       return;
     }
-
     if (map) return;
 
     map = L.map("map").setView([52.2297, 21.0122], 6);
     setBase(0);
 
     railLayer = L.tileLayer("https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png", {
-      attribution: "© OpenRailwayMap",
-      opacity: 0.65,
-      maxZoom: 19,
+      attribution:"© OpenRailwayMap",
+      opacity:0.65,
+      maxZoom:19
     });
 
     applyRail();
 
-    setTimeout(() => map.invalidateSize(true), 250);
-    setTimeout(() => map.invalidateSize(true), 900);
-    window.addEventListener("resize", () => map && map.invalidateSize(true));
-  }
+    // Timeout diagnostyczny: jeśli po 5s brak kafelków
+    setTimeout(() => {
+      if (!tileLoaded) {
+        overlay(`⚠️ Mapa nadal się nie ładuje.<br/>Najczęściej blokuje to adblock lub sieć.<br/>Spróbuj Ctrl+F5 / wyłącz blokery / inna sieć.`);
+      }
+    }, 5000);
 
-  // ---------- autocomplete ----------
+    setTimeout(()=>map.invalidateSize(true), 250);
+    setTimeout(()=>map.invalidateSize(true), 900);
+    window.addEventListener("resize", ()=>map && map.invalidateSize(true));
+  };
+
+  // ---------- Autocomplete ----------
   let debounce = null;
 
-  async function onType(val) {
+  const onType = async (val) => {
     const q = (val || "").trim();
     if (q.length < 2) return;
 
-    // 1) zawsze cities fallback (pełnotekst)
+    // 1) Miasta (lokalnie)
     const citySuggestions = suggestCities(q);
-    if (citySuggestions.length) setDatalist(citySuggestions);
+    setDatalist(citySuggestions);
 
-    // 2) jeśli kiedyś dojdą stacje z /stations - nadpisz tylko jeśli są
+    // 2) Stacje (kiedy PKP będzie gotowe — nadpisze tylko jeśli ma wyniki)
     try {
-      const stations = await pkpStations(q);
-      const names = stations.map((s) => s && s.name).filter(Boolean);
+      const data = await workerFetch("/stations", { q });
+      const names = Array.isArray(data?.stations) ? data.stations.map(s => s?.name).filter(Boolean) : [];
       if (names.length) setDatalist(names);
     } catch {
       // ignoruj
     }
-  }
+  };
 
-  function bind(el) {
+  const bind = (el) => {
     if (!el) return;
     el.addEventListener("input", (e) => {
       clearTimeout(debounce);
       debounce = setTimeout(() => onType(e.target.value), 120);
     });
-  }
+  };
 
-  // ---------- boot ----------
+  // ---------- Boot ----------
   document.addEventListener("DOMContentLoaded", async () => {
-    clearMsg();
+    hide(warnBox); hide(errorBox);
+
     initMap();
 
-    // data dzisiaj
+    if (railOverlayEl) railOverlayEl.addEventListener("change", () => applyRail());
+
+    // data dziś
     if (dateEl && !dateEl.value) {
       const d = new Date();
-      dateEl.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      dateEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     }
 
-    // startowe podpowiedzi: top 200 (żeby nie był tylko A)
-    const initial = CITY_INDEX
-      .slice(0, 220)
-      .map((x) => x.label);
-    setDatalist(initial);
+    // jeśli 0 miast -> pokaż czemu
+    if (!CITIES.length) {
+      err("Lista miast jest pusta. cities-eu.js nie wczytał się albo ma inną nazwę. Sprawdź w repo czy plik nazywa się dokładnie: cities-eu.js i jest w (root).");
+    }
+
+    // startowe podpowiedzi (top 120)
+    setDatalist(CITY_INDEX.slice(0, 120).map(x => x.label));
 
     bind(fromEl);
     bind(toEl);
-    bind(viasEl);
-
-    if (railOverlayEl) railOverlayEl.addEventListener("change", () => { initMap(); applyRail(); });
 
     // /health
     try {
       const h = await workerFetch("/health", {});
-      if (h && h.ok) setMode("AUTO (Worker OK)", true);
-      else setMode("AUTO", false);
+      setMode(h?.ok ? "AUTO (Worker OK)" : "AUTO", !!h?.ok);
     } catch {
       setMode("MOCK", false);
     }
 
     if (searchBtn) {
       searchBtn.addEventListener("click", () => {
-        clearMsg();
-        warn("Stacje PKP jeszcze nie są podpięte (endpoint /stations zwraca pustą listę). Podpowiedzi działają z listy miast (pełnotekst).");
+        warn("Na razie: mapa + miasta. Stacje PKP podłączymy jak dostaniesz API.");
       });
     }
   });
