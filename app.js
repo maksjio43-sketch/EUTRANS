@@ -34,7 +34,7 @@
 
   // IMPORTANT: set your Worker URL here after you deploy it
   // Example: https://eutrans-pkp.<your-subdomain>.workers.dev
-  const WORKER_URL = ""; // <-- wkleisz później
+  const WORKER_URL = "https:/eurotrans.maksjio43.workers.dev"; // <-- wkleisz później
 
   // ---------------- Helpers ----------------
   const norm = (s) =>
@@ -519,3 +519,4 @@
     renderStart();
   });
 })();
+
