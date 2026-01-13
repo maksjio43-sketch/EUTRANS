@@ -5,12 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>EUTRANS</title>
 
-  <!-- PWA -->
-  <link rel="manifest" href="./manifest.webmanifest">
-  <meta name="theme-color" content="#0b1220">
-
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <!-- Leaflet (jsDelivr - zwykle mniej blokowany niż unpkg) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
   <style>
     :root{
@@ -20,8 +16,6 @@
       --text:#e8eefc;
       --accent:#3b82f6;
       --border:rgba(255,255,255,.08);
-      --warn:#f59e0b;
-      --danger:#ef4444;
     }
     *{box-sizing:border-box}
     body{
@@ -36,7 +30,7 @@
     .logo{
       width:44px; height:44px; border-radius:14px;
       background: linear-gradient(135deg, var(--accent), #7c3aed);
-      display:grid; place-items:center; font-weight:900; font-size:16px;
+      display:grid; place-items:center; font-weight:900;
       box-shadow: 0 12px 30px rgba(59,130,246,.25);
     }
     h1{margin:0; font-size:22px;}
@@ -44,7 +38,7 @@
     .pill{
       font-size:12px; padding:5px 10px; border-radius:999px;
       border:1px solid var(--border); color:var(--muted);
-      background: rgba(255,255,255,.03); white-space:nowrap;
+      background: rgba(255,255,255,.03);
     }
 
     .grid{display:grid; grid-template-columns: 1.1fr .9fr; gap:16px;}
@@ -59,26 +53,48 @@
       backdrop-filter: blur(10px);
     }
     .mapwrap{padding:0; overflow:hidden;}
-    #map{height:540px; width:100%;}
+    /* Kluczowe: mapa MUSI mieć wysokość */
+    #map{
+      height:540px;
+      width:100%;
+      background: rgba(255,255,255,.06);
+      position:relative;
+    }
     @media(max-width:980px){ #map{height:420px;} }
+
+    /* Diagnostyka w miejscu mapy */
+    .mapStatus{
+      position:absolute;
+      inset:12px;
+      border:1px dashed rgba(255,255,255,.18);
+      border-radius:14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:12px;
+      color:var(--muted);
+      background: rgba(0,0,0,.25);
+      text-align:center;
+      pointer-events:none;
+      font-size:14px;
+      line-height:1.35;
+    }
 
     label{display:block; font-size:13px; color:var(--muted); margin:0 0 6px;}
     input, select, button{
       width:100%;
-      padding:15px 16px;     /* DUŻE pola */
+      padding:15px 16px;
       border-radius:14px;
       border:1px solid var(--border);
       background: rgba(255,255,255,.05);
       color:var(--text);
       outline:none;
-      font-size:16px;        /* DUŻY tekst */
+      font-size:16px;
     }
     input:focus, select:focus{
       border-color: rgba(59,130,246,.6);
       box-shadow: 0 0 0 3px rgba(59,130,246,.18);
     }
-
-    /* DUŻE kolumny dla Skąd/Dokąd */
     .row{
       display:grid;
       grid-template-columns: 1.6fr 1.6fr 210px 150px;
@@ -100,15 +116,23 @@
     }
     .btn:hover{filter:brightness(1.07)}
 
-    .error{
-      color:#ffb4b4; background: rgba(239,68,68,.12);
-      border:1px solid rgba(239,68,68,.25);
-      padding:12px 12px; border-radius:12px; display:none; margin-top:12px;
-    }
     .warn{
-      color:#ffe0b2; background: rgba(245,158,11,.12);
+      display:none;
+      margin-top:12px;
+      padding:12px;
+      border-radius:12px;
+      background: rgba(245,158,11,.12);
       border:1px solid rgba(245,158,11,.25);
-      padding:12px 12px; border-radius:12px; display:none; margin-top:12px;
+      color:#ffe0b2;
+    }
+    .error{
+      display:none;
+      margin-top:12px;
+      padding:12px;
+      border-radius:12px;
+      background: rgba(239,68,68,.12);
+      border:1px solid rgba(239,68,68,.25);
+      color:#ffb4b4;
     }
 
     .sectionTitle{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:16px 0 8px;}
@@ -118,7 +142,6 @@
       padding:14px;
       background: rgba(255,255,255,.03);
     }
-
     .kbd{
       font-family: ui-monospace, Consolas, monospace;
       background: rgba(255,255,255,.08);
@@ -145,18 +168,6 @@
       white-space:nowrap;
     }
     .pillLink:hover{background: rgba(255,255,255,.07);}
-
-    .leg{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      border:1px dashed rgba(255,255,255,.10);
-      background: rgba(0,0,0,.12);
-      padding:8px 10px;
-      border-radius:12px;
-      margin-top:8px;
-    }
-    .legLeft{display:flex; flex-direction:column; gap:2px;}
-    .legTitle{font-weight:900}
-    .legMeta{color:var(--muted); font-size:12px}
   </style>
 </head>
 
@@ -167,7 +178,7 @@
       <div class="logo">EU</div>
       <div>
         <h1>EUTRANS</h1>
-        <div class="hint">Europa lądowa • realne połączenia • PLN • polskie nazwy</div>
+        <div class="hint">Mapa + trasy + PLN + polskie nazwy</div>
       </div>
     </div>
     <span class="pill" id="statsPill">Miasta: …</span>
@@ -175,7 +186,11 @@
 
   <div class="grid">
     <div class="card mapwrap">
-      <div id="map"></div>
+      <div id="map">
+        <div id="mapStatus" class="mapStatus">
+          Ładowanie mapy… Jeśli to nie zniknie, Leaflet jest blokowany albo nie ładuje się z CDN.
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -259,9 +274,13 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Leaflet JS (jsDelivr) -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Data -->
 <script src="./cities-eu.js"></script>
+
+<!-- App -->
 <script src="./app.js"></script>
 </body>
 </html>
-
