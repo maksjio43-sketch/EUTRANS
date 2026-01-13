@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>SmartRoute</title>
+  <title>EUTRANS</title>
 
   <!-- PWA -->
   <link rel="manifest" href="./manifest.webmanifest">
@@ -22,6 +22,7 @@
       --accent2:#22c55e;
       --border:rgba(255,255,255,.08);
       --warn:#f59e0b;
+      --danger:#ef4444;
     }
     *{box-sizing:border-box}
     body{
@@ -36,7 +37,7 @@
     .logo{
       width:40px; height:40px; border-radius:12px;
       background: linear-gradient(135deg, var(--accent), #7c3aed);
-      display:grid; place-items:center; font-weight:800;
+      display:grid; place-items:center; font-weight:900;
       box-shadow: 0 12px 30px rgba(59,130,246,.25);
     }
     h1{font-size:20px; margin:0;}
@@ -68,7 +69,11 @@
       font-size:14px;
     }
     textarea{min-height:64px; resize:vertical;}
-    input:focus, select:focus, textarea:focus{border-color: rgba(59,130,246,.55); box-shadow: 0 0 0 3px rgba(59,130,246,.14);}
+    input:focus, select:focus, textarea:focus{
+      border-color: rgba(59,130,246,.55);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.14);
+    }
+
     .row{display:grid; grid-template-columns: 1fr 1fr 170px 140px; gap:10px;}
     @media (max-width: 980px){ .row{grid-template-columns:1fr;} }
 
@@ -98,11 +103,13 @@
       cursor:pointer;
     }
     .btn-ghost:hover{background: rgba(255,255,255,.06);}
+
     .pill{
       font-size:12px; padding:4px 8px; border-radius:999px;
       border:1px solid var(--border); color:var(--muted);
       background: rgba(255,255,255,.03); white-space:nowrap;
     }
+
     .error{
       color:#ffb4b4; background: rgba(239,68,68,.12);
       border:1px solid rgba(239,68,68,.25);
@@ -113,8 +120,10 @@
       border:1px solid rgba(245,158,11,.22);
       padding:10px 12px; border-radius:12px; display:none; margin-top:10px;
     }
-    .sectionTitle{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0;}
+
+    .sectionTitle{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:12px 0;}
     .list{display:grid; gap:10px;}
+
     .offer{
       border:1px solid var(--border);
       border-radius:14px;
@@ -123,6 +132,7 @@
       display:flex; align-items:center; justify-content:space-between; gap:10px;
     }
     .offer small{color:var(--muted)}
+
     .routeCard{
       border:1px solid var(--border);
       border-radius:14px;
@@ -138,8 +148,9 @@
       border-radius:12px;
     }
     .legLeft{display:flex; flex-direction:column; gap:2px;}
-    .legTitle{font-weight:800}
+    .legTitle{font-weight:900}
     .legMeta{color:var(--muted); font-size:12px}
+
     .kbd{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New";
       background: rgba(255,255,255,.06);
@@ -149,6 +160,7 @@
       font-size:12px;
       color: #dbe7ff;
     }
+
     .footerHint{color:var(--muted); font-size:12px; margin-top:10px; line-height:1.45;}
   </style>
 </head>
@@ -157,12 +169,13 @@
 <div class="container">
   <header>
     <div class="brand">
-      <div class="logo">SR</div>
+      <div class="logo">EU</div>
       <div>
-        <h1>SmartRoute</h1>
-        <div class="hint">Europa lądowa • Multi-stop • Kontrola przesiadek • PWA</div>
+        <h1>EUTRANS</h1>
+        <div class="hint">Europa lądowa • trasy • przesiadki • ceny • przekierowania</div>
       </div>
     </div>
+
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <span class="pill" id="statsPill">Miasta: …</span>
       <button class="btn-ghost" id="installBtn" style="display:none; width:auto; padding:10px 12px;">Zainstaluj aplikację</button>
@@ -175,6 +188,7 @@
     </div>
 
     <div class="card">
+      <!-- GŁÓWNE POLA -->
       <div class="row">
         <div>
           <label>Skąd</label>
@@ -194,6 +208,9 @@
         </div>
       </div>
 
+      <datalist id="cities"></datalist>
+
+      <!-- PRZESIADKI -->
       <div class="row2" style="margin-top:10px;">
         <div>
           <label>Min. czas na przesiadkę</label>
@@ -218,6 +235,7 @@
         </div>
       </div>
 
+      <!-- VIA + OPTYMALIZACJA -->
       <div class="row2" style="margin-top:10px;">
         <div>
           <label>Stacje poboczne (opcjonalnie)</label>
@@ -228,17 +246,51 @@
           <select id="optMode">
             <option value="balanced" selected>Najkorzystniej (balans)</option>
             <option value="fastest">Najszybciej</option>
-            <option value="cheapest">Najtaniej (poglądowo)</option>
+            <option value="cheapest">Najtaniej</option>
             <option value="fewest">Najmniej przesiadek</option>
           </select>
         </div>
       </div>
 
-      <datalist id="cities"></datalist>
+      <!-- NOWE: WALUTA / MAPA / KOLEJ / ŹRÓDŁO -->
+      <div class="row2" style="margin-top:10px;">
+        <div>
+          <label>Waluta</label>
+          <select id="currency">
+            <option value="PLN" selected>PLN</option>
+            <option value="EUR">EUR</option>
+          </select>
+        </div>
+        <div>
+          <label>Linia na mapie</label>
+          <select id="lineStyle">
+            <option value="route" selected>Po trasie (polilinia)</option>
+            <option value="straight">Prosta</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row2" style="margin-top:10px;">
+        <div>
+          <label>Warstwa kolei</label>
+          <select id="railOverlay">
+            <option value="off" selected>Wyłączona</option>
+            <option value="on">Włączona (OpenRailwayMap)</option>
+          </select>
+        </div>
+        <div>
+          <label>Źródło danych</label>
+          <select id="dataSource">
+            <option value="real" selected>Realne (weryfikuj połączenia)</option>
+            <option value="offline">Offline (symulacja)</option>
+          </select>
+        </div>
+      </div>
 
       <div class="error" id="errorBox"></div>
       <div class="warn" id="warnBox"></div>
 
+      <!-- WYNIK -->
       <div class="sectionTitle">
         <strong>Wynik trasy</strong>
         <span class="pill" id="routeMeta">Brak trasy</span>
@@ -248,21 +300,24 @@
         <div class="hint">Wpisz trasę i kliknij <span class="kbd">Szukaj</span>.</div>
       </div>
 
+      <!-- ZAKUP -->
       <div class="sectionTitle">
         <strong>Zakup biletu</strong>
-        <span class="pill">deeplink</span>
+        <span class="pill">link</span>
       </div>
-      <a class="btn-green" id="buyLink" href="#" target="_blank" rel="noopener noreferrer">Kup bilet przez Omio</a>
+      <a class="btn-green" id="buyLink" href="#" target="_blank" rel="noopener noreferrer">Kup bilet</a>
 
+      <!-- OFERTY -->
       <div class="sectionTitle" style="margin-top:14px;">
-        <strong>Oferty (poglądowe)</strong>
-        <span class="pill">bez API</span>
+        <strong>Oferty</strong>
+        <span class="pill">wyniki</span>
       </div>
       <div class="list" id="offers"></div>
 
       <div class="footerHint">
-        Bez serwera nie pobierzemy stabilnie realnych rozkładów i cen (CORS/klucze).<br/>
-        Ale: multi-stop, algorytmy trasy, UI, mapa i PWA są w 100% do zrobienia już teraz.
+        W trybie <span class="kbd">Realne</span> aplikacja nie powinna “wymyślać” połączeń.
+        W trybie <span class="kbd">Offline</span> wyniki są symulacją.<br/>
+        Warstwa kolei pokazuje sieć torów (overlay), a polilinia daje bardziej naturalny przebieg trasy.
       </div>
     </div>
   </div>
@@ -271,6 +326,5 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="./cities-eu.js"></script>
 <script src="./app.js"></script>
-
 </body>
 </html>
