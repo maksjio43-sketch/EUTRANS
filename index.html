@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>EUTRANS — Kolej (PKP)</title>
 
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
   <style>
     :root{
@@ -39,6 +40,7 @@
     }
     .pill.ok{border-color: rgba(34,197,94,.35); color: rgba(34,197,94,.95); background: rgba(34,197,94,.08);}
     .pill.warn{border-color: rgba(245,158,11,.35); color: rgba(245,158,11,.95); background: rgba(245,158,11,.08);}
+    .pill.bad{border-color: rgba(239,68,68,.35); color: rgba(239,68,68,.95); background: rgba(239,68,68,.08);}
 
     .grid{display:grid; grid-template-columns: 1.1fr .9fr; gap:16px;}
     @media (max-width: 980px){ .grid{grid-template-columns:1fr;} }
@@ -51,16 +53,15 @@
       box-shadow: 0 12px 35px rgba(0,0,0,.25);
       backdrop-filter: blur(10px);
     }
-    .mapwrap{padding:0; overflow:hidden;}
+    .mapwrap{padding:0; overflow:hidden; position:relative;}
     #map{
       height:540px; min-height:540px;
       width:100%;
       background: rgba(255,255,255,.06);
-      position:relative;
     }
     @media(max-width:980px){ #map{height:420px; min-height:420px;} }
 
-    .mapOverlay{
+    .overlay{
       position:absolute; inset:12px;
       border:1px dashed rgba(255,255,255,.18);
       border-radius:14px;
@@ -75,66 +76,61 @@
       z-index: 500;
     }
 
-    label{display:block; font-size:13px; color:var(--muted); margin:0 0 6px;}
+    /* FORM */
+    .row{
+      display:grid;
+      grid-template-columns: 1.8fr 1.8fr 210px 150px;
+      gap:12px;
+      align-items:flex-start;
+    }
+    .row2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      margin-top:12px;
+    }
+    @media (max-width: 980px){ .row,.row2{grid-template-columns:1fr;} }
+
+    label{display:block; font-size:13px; color:var(--muted); margin:0 0 8px; line-height:1.2;}
     input, select, button{
       width:100%;
-      padding:15px 16px;
+      padding:16px 18px;
       border-radius:14px;
       border:1px solid var(--border);
       background: rgba(255,255,255,.05);
       color:var(--text);
       outline:none;
-      font-size:16px;
+      font-size:17px;
+      min-height:54px;
     }
-    input:focus, select:focus{
-      border-color: rgba(59,130,246,.6);
-      box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+    .btn{
+      background: var(--accent);
+      color:white;
+      font-weight:900;
+      cursor:pointer;
+      border:none;
     }
 
-    .row{display:grid; grid-template-columns: 1.8fr 1.8fr 210px 150px; gap:12px;}
-    .row2{display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px;}
-    @media (max-width: 980px){ .row,.row2{grid-template-columns:1fr;} }
-
-    .btn{background: var(--accent); color:white; font-weight:900; cursor:pointer;}
-    .btn:hover{filter:brightness(1.07)}
-
-    .warnBox, .errorBox{
-      display:none; margin-top:12px; padding:12px; border-radius:12px;
+    /* DIAG PANEL */
+    .diag{
+      display:grid;
+      gap:8px;
+      margin-top:12px;
       border:1px solid var(--border);
-      background: rgba(255,255,255,.04);
-      color:var(--text);
+      border-radius:14px;
+      padding:12px;
+      background: rgba(255,255,255,.03);
     }
-    .warnBox{border-color: rgba(245,158,11,.25); background: rgba(245,158,11,.12);}
-    .errorBox{border-color: rgba(239,68,68,.25); background: rgba(239,68,68,.12);}
-    /* === POPRAWKA WYRÓWNANIA SKĄD / DOKĄD === */
-
-.row{
-  display:grid;
-  grid-template-columns: 1.8fr 1.8fr 210px 150px;
-  gap:12px;
-  align-items:flex-start; /* 🔥 TO PODNOSI POLA */
-}
-
-label{
-  display:block;
-  font-size:13px;
-  color:var(--muted);
-  margin:0 0 8px;
-  line-height:1.2;
-}
-
-input, select, button{
-  width:100%;
-  padding:16px 18px;     /* 🔥 WIĘKSZE POLA */
-  border-radius:14px;
-  border:1px solid var(--border);
-  background: rgba(255,255,255,.05);
-  color:var(--text);
-  outline:none;
-  font-size:17px;
-  min-height:54px;
-}
-
+    .diagRow{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      font-size:13px;
+      color:var(--muted);
+    }
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:var(--text);}
+    a{color:#9dc1ff}
   </style>
 </head>
 
@@ -144,32 +140,32 @@ input, select, button{
     <div class="brand">
       <div class="logo">EU</div>
       <div>
-        <h1>EUTRANS — Kolej (PKP)</h1>
-        <div class="hint">Mapa • miasta • później stacje PKP</div>
+        <h1>EUTRANS</h1>
+        <div class="hint">Debug: mapa + miasta</div>
       </div>
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
-      <span class="pill" id="statsPill">Miasta: …</span>
-      <span class="pill warn" id="modePill">TRYB: AUTO</span>
+      <span class="pill warn" id="pillLeaflet">Leaflet: …</span>
+      <span class="pill warn" id="pillCities">Miasta: …</span>
+      <span class="pill warn" id="pillApp">app.js: …</span>
     </div>
   </header>
 
   <div class="grid">
     <div class="card mapwrap">
-      <div id="map">
-        <div id="mapOverlay" class="mapOverlay">Ładowanie mapy…</div>
-      </div>
+      <div id="map"></div>
+      <div id="mapOverlay" class="overlay">Ładowanie mapy…</div>
     </div>
 
     <div class="card">
       <div class="row">
         <div>
-          <label>Skąd (miasto / stacja)</label>
-          <input id="from" list="stations" placeholder="np. Warszawa / Berlin" autocomplete="off"/>
+          <label>Skąd</label>
+          <input id="from" list="stations" placeholder="np. Warszawa" autocomplete="off"/>
         </div>
         <div>
-          <label>Dokąd (miasto / stacja)</label>
-          <input id="to" list="stations" placeholder="np. Kraków / Praga" autocomplete="off"/>
+          <label>Dokąd</label>
+          <input id="to" list="stations" placeholder="np. Berlin" autocomplete="off"/>
         </div>
         <div>
           <label>Data</label>
@@ -192,47 +188,53 @@ input, select, button{
           </select>
         </div>
         <div>
-          <label>Źródło danych</label>
-          <select id="provider">
-            <option value="auto" selected>Auto</option>
-            <option value="mock">MOCK</option>
-          </select>
+          <label>Info</label>
+          <input id="info" value="Tryb diagnostyczny" disabled />
         </div>
       </div>
 
-      <div class="warnBox" id="warnBox"></div>
-      <div class="errorBox" id="errorBox"></div>
+      <div class="diag">
+        <div class="diagRow"><span>Test pliku cities:</span>
+          <span class="mono"><a id="linkCities" href="#" target="_blank">otwórz</a></span>
+        </div>
+        <div class="diagRow"><span>Test pliku app.js:</span>
+          <span class="mono"><a id="linkApp" href="#" target="_blank">otwórz</a></span>
+        </div>
+        <div class="diagRow"><span>Wynik:</span>
+          <span class="mono" id="diagText">—</span>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Leaflet (jedna wersja) -->
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Cache bust: wymusza aktualne pliki na GitHub Pages -->
+<!-- Ładujemy cities-eu.js i app.js z “cache bust” -->
 <script>
-  const V = Date.now(); // wersja na świeżo (cache-buster)
+  // cache buster, żeby GitHub Pages nie dawał starej wersji
+  const V = Date.now();
 
-  // 1) cities-eu.js
-  const cities = document.createElement('script');
-  cities.src = './cities-eu.js?v=' + V;
-  cities.onerror = () => {
-    window.CITIES_EU = [];
-    const el = document.getElementById('errorBox');
-    if (el) { el.style.display='block'; el.textContent = 'Nie wczytało cities-eu.js (brak pliku lub zła nazwa). Sprawdź czy w repo jest dokładnie cities-eu.js w (root).'; }
-  };
-  document.body.appendChild(cities);
+  // linki do testu
+  const base = location.href.replace(/\/index\.html.*$/,'/').replace(/\?.*$/,'');
+  document.getElementById('linkCities').href = base + 'cities-eu.js?v=' + V;
+  document.getElementById('linkApp').href = base + 'app.js?v=' + V;
 
-  // 2) app.js (dopiero po cities)
-  cities.onload = () => {
-    const app = document.createElement('script');
-    app.src = './app.js?v=' + V;
-    app.onerror = () => {
-      const el = document.getElementById('errorBox');
-      if (el) { el.style.display='block'; el.textContent = 'Nie wczytało app.js (sprawdź czy plik istnieje w repo w root).'; }
+  const citiesScript = document.createElement('script');
+  citiesScript.src = './cities-eu.js?v=' + V;
+  citiesScript.onerror = () => { window.CITIES_EU = []; };
+  document.body.appendChild(citiesScript);
+
+  citiesScript.onload = () => {
+    const appScript = document.createElement('script');
+    appScript.src = './app.js?v=' + V;
+    appScript.onerror = () => {
+      document.getElementById('diagText').textContent = 'Nie wczytało app.js (404 albo błąd).';
     };
-    document.body.appendChild(app);
+    document.body.appendChild(appScript);
   };
 </script>
+
 </body>
 </html>
