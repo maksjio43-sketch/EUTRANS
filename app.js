@@ -13,7 +13,7 @@
   const warnBox = $("warnBox");
   const errorBox = $("errorBox");
 
-  const WORKER_URL = "https://eutrans.maksijo43.workers.dev";
+  const WORKER_URL = "https://eurotrans.maksijo43.workers.dev";
 
   const norm = (s) =>
     (s || "")
@@ -246,3 +246,4 @@
     }
   });
 })();
+
