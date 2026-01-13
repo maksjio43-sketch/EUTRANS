@@ -19,12 +19,13 @@
   // Twój działający Worker:
   const WORKER_URL = "https://eutrans.maksijo43.workers.dev";
 
+  // ---------- helpers ----------
   const norm = (s) =>
     (s || "")
       .trim()
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
+      .replace(/[\u0300-\u036f]/g, ""); // usuwa akcenty: ł->l itd.
 
   function show(el, msg) {
     if (!el) return;
@@ -58,51 +59,82 @@
   function setDatalist(values) {
     if (!stationsDL) return;
     stationsDL.innerHTML = "";
-    for (const v of values.slice(0, 120)) {
+    for (const v of values.slice(0, 140)) {
       const opt = document.createElement("option");
       opt.value = v;
       stationsDL.appendChild(opt);
     }
   }
 
-  // --- cities fallback
+  // ---------- cities fallback (FULL SEARCH + ranking) ----------
   const CITIES = window.CITIES_EU || [];
   if (statsPill) statsPill.textContent = "Miasta: " + (CITIES.length || 0).toLocaleString("pl-PL");
-
-  const cityPrefix = new Map();
-
-  for (let i = 0; i < CITIES.length; i++) {
-    const c = CITIES[i];
-    const base = (c && (c.pl || c.name)) ? (c.pl || c.name) : "";
-    if (!base) continue;
-    const key = norm(base).slice(0, 2);
-    if (!cityPrefix.has(key)) cityPrefix.set(key, []);
-    cityPrefix.get(key).push(i);
-  }
 
   function cityDisplay(c) {
     const base = c.pl || c.name;
     return c.cc ? `${base} (${c.cc})` : base;
   }
 
-  function suggestCities(q) {
-    const v = norm(q);
-    if (v.length < 2) return;
-    const key = v.slice(0, 2);
-    const idxs = cityPrefix.get(key) || [];
-    const out = [];
-    for (let k = 0; k < idxs.length && out.length < 120; k++) {
-      const c = CITIES[idxs[k]];
-      const dn = cityDisplay(c);
-      const dnN = norm(dn);
-      const nameN = norm(c.name);
-      const plN = c.pl ? norm(c.pl) : "";
-      if (dnN.startsWith(v) || nameN.startsWith(v) || (plN && plN.startsWith(v))) out.push(dn);
-    }
-    if (out.length) setDatalist(out);
+  // Precompute searchable strings to make it fast
+  const CITY_INDEX = CITIES
+    .map((c, i) => {
+      const label = cityDisplay(c);
+      const a = norm(label);
+      const b = norm(c.name);
+      const p = c.pl ? norm(c.pl) : "";
+      return { i, c, label, a, b, p };
+    })
+    .filter((x) => x.label && x.a);
+
+  // Ranking:
+  // 0 = prefix match (najlepsze)
+  // 1 = word-boundary match
+  // 2 = substring match
+  function scoreMatch(q, item) {
+    if (!q) return null;
+
+    const { a, b, p } = item;
+
+    // prefix
+    if (a.startsWith(q) || b.startsWith(q) || (p && p.startsWith(q))) return 0;
+
+    // word boundary (np. "Nowy" w "Kraków Nowy..." itd.)
+    const re = new RegExp(`(^|\\s|\\-|\\(|\\[)${q}`);
+    if (re.test(a) || re.test(b) || (p && re.test(p))) return 1;
+
+    // substring
+    if (a.includes(q) || b.includes(q) || (p && p.includes(q))) return 2;
+
+    return null;
   }
 
-  // --- worker fetch
+  function suggestCities(qRaw) {
+    const q = norm(qRaw);
+    if (q.length < 2) return [];
+
+    // Weź top N po rankingu + krótsze nazwy wyżej
+    const hits = [];
+    for (const item of CITY_INDEX) {
+      const s = scoreMatch(q, item);
+      if (s === null) continue;
+      hits.push({ s, len: item.label.length, label: item.label });
+    }
+
+    hits.sort((x, y) => (x.s - y.s) || (x.len - y.len) || x.label.localeCompare(y.label, "pl"));
+
+    // uniq + limit
+    const out = [];
+    const seen = new Set();
+    for (const h of hits) {
+      if (seen.has(h.label)) continue;
+      seen.add(h.label);
+      out.push(h.label);
+      if (out.length >= 140) break;
+    }
+    return out;
+  }
+
+  // ---------- worker fetch ----------
   async function workerFetch(path, params) {
     const url = new URL(WORKER_URL.replace(/\/$/, "") + path);
     for (const [k, v] of Object.entries(params || {})) {
@@ -114,11 +146,12 @@
   }
 
   async function pkpStations(q) {
+    // na razie worker zwraca [], ale zostawiamy
     const data = await workerFetch("/stations", { q });
     return Array.isArray(data && data.stations) ? data.stations : [];
   }
 
-  // --- map
+  // ---------- map ----------
   let map = null;
   let baseLayer = null;
   let railLayer = null;
@@ -202,23 +235,24 @@
     window.addEventListener("resize", () => map && map.invalidateSize(true));
   }
 
-  // --- autocomplete (zawsze fallback na miasta)
+  // ---------- autocomplete ----------
   let debounce = null;
 
   async function onType(val) {
     const q = (val || "").trim();
     if (q.length < 2) return;
 
-    // zawsze fallback:
-    suggestCities(q);
+    // 1) zawsze cities fallback (pełnotekst)
+    const citySuggestions = suggestCities(q);
+    if (citySuggestions.length) setDatalist(citySuggestions);
 
-    // jak Worker kiedyś zwróci stacje, nadpisze:
+    // 2) jeśli kiedyś dojdą stacje z /stations - nadpisz tylko jeśli są
     try {
-      const stations = await pkpStations(q); // na razie zwykle []
+      const stations = await pkpStations(q);
       const names = stations.map((s) => s && s.name).filter(Boolean);
       if (names.length) setDatalist(names);
-    } catch (e) {
-      // ignoruj — zostaje fallback z miast
+    } catch {
+      // ignoruj
     }
   }
 
@@ -226,20 +260,26 @@
     if (!el) return;
     el.addEventListener("input", (e) => {
       clearTimeout(debounce);
-      debounce = setTimeout(() => onType(e.target.value), 150);
+      debounce = setTimeout(() => onType(e.target.value), 120);
     });
   }
 
+  // ---------- boot ----------
   document.addEventListener("DOMContentLoaded", async () => {
     clearMsg();
     initMap();
 
+    // data dzisiaj
     if (dateEl && !dateEl.value) {
       const d = new Date();
       dateEl.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
 
-    setDatalist(CITIES.slice(0, 250).map(cityDisplay));
+    // startowe podpowiedzi: top 200 (żeby nie był tylko A)
+    const initial = CITY_INDEX
+      .slice(0, 220)
+      .map((x) => x.label);
+    setDatalist(initial);
 
     bind(fromEl);
     bind(toEl);
@@ -247,6 +287,7 @@
 
     if (railOverlayEl) railOverlayEl.addEventListener("change", () => { initMap(); applyRail(); });
 
+    // /health
     try {
       const h = await workerFetch("/health", {});
       if (h && h.ok) setMode("AUTO (Worker OK)", true);
@@ -258,7 +299,7 @@
     if (searchBtn) {
       searchBtn.addEventListener("click", () => {
         clearMsg();
-        warn("Stacje PKP jeszcze nie są podpięte (endpoint /stations zwraca pustą listę). Podpowiedzi działają z listy miast (fallback).");
+        warn("Stacje PKP jeszcze nie są podpięte (endpoint /stations zwraca pustą listę). Podpowiedzi działają z listy miast (pełnotekst).");
       });
     }
   });
