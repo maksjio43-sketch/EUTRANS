@@ -5,20 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>EUTRANS — PKP (kolej)</title>
 
-  <!-- Leaflet (jsDelivr) -->
+  <!-- Leaflet CSS (fallback: jsDelivr -> unpkg) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
   <style>
     :root{
-      --bg:#0b1220;
-      --card:#121a2a;
-      --muted:#93a4c7;
-      --text:#e8eefc;
-      --accent:#3b82f6;
-      --border:rgba(255,255,255,.08);
-      --warn:#f59e0b;
-      --danger:#ef4444;
-      --ok:#22c55e;
+      --bg:#0b1220; --card:#121a2a; --muted:#93a4c7; --text:#e8eefc;
+      --accent:#3b82f6; --border:rgba(255,255,255,.08);
+      --warn:#f59e0b; --danger:#ef4444; --ok:#22c55e;
     }
     *{box-sizing:border-box}
     body{
@@ -83,7 +78,6 @@
       box-shadow: 0 0 0 3px rgba(59,130,246,.18);
     }
 
-    /* DUŻE kolumny dla Skąd/Dokąd */
     .row{
       display:grid;
       grid-template-columns: 1.8fr 1.8fr 210px 150px;
@@ -158,15 +152,11 @@
     }
     .pillLink:hover{background: rgba(255,255,255,.07);}
 
-    /* Map overlay status */
     .mapOverlay{
-      position:absolute;
-      inset:12px;
+      position:absolute; inset:12px;
       border:1px dashed rgba(255,255,255,.18);
       border-radius:14px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
+      display:flex; align-items:center; justify-content:center;
       padding:12px;
       color:rgba(255,255,255,.78);
       background: rgba(0,0,0,.25);
@@ -191,7 +181,7 @@
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
       <span class="pill" id="statsPill">Miasta: …</span>
-      <span class="pill warn" id="modePill">TRYB: MOCK</span>
+      <span class="pill warn" id="modePill">TRYB: AUTO</span>
     </div>
   </header>
 
@@ -287,9 +277,7 @@
       </div>
 
       <div class="routeCard" id="routeCard">
-        <div class="hint">
-          Wpisz <span class="kbd">Skąd</span> i <span class="kbd">Dokąd</span>, wybierz datę i kliknij <span class="kbd">Szukaj</span>.
-        </div>
+        <div class="hint">Wpisz <span class="kbd">Skąd</span> i <span class="kbd">Dokąd</span> i kliknij <span class="kbd">Szukaj</span>.</div>
       </div>
 
       <div class="sectionTitle">
@@ -301,10 +289,11 @@
   </div>
 </div>
 
-<!-- Leaflet -->
+<!-- Leaflet JS (fallback: jsDelivr -> unpkg) -->
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Your cities list (used as fallback suggestions; later we swap to PKP stations autocomplete) -->
+<!-- Cities list -->
 <script src="./cities-eu.js"></script>
 
 <!-- App -->
